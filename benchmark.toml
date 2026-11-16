@@ -1,0 +1,54 @@
+# Benchmark configuration. CLI flags override [run] values.
+
+[run]
+datasets = ["dbpedia-512-100k"]
+algorithms = [
+    "pca",
+    "opentsne-fft",
+    "mrs-tsne-bh",
+    "mrs-tsne-fft",
+    "umap-learn",
+    "umap-learn-legacy",
+    "mrs-umap",
+    "ncvis",
+    "ncvis-ef64",
+    "ncvis-hq",
+]
+seeds = [0, 1, 2]
+n_threads = 8
+timeout_s = 3600
+cooldown_s = 0
+# Untimed run on the first rows first, so JIT compilation (numba) is not measured.
+warmup_rows = 2000
+data_dir = "data"
+results_dir = "results"
+
+[metrics]
+k_local = [5, 15, 30]
+k_clusters = [5, 15, 30]
+recall_k = 15
+n_random_pairs = 200000
+chunk_rows = 512
+
+[curves]
+# Quality vs time: each tunable algorithm reruns with its default epoch count scaled by these
+# multipliers (×1 = library default). Doubling steps spread the points evenly on a log time axis.
+algorithms = [
+    "pca",
+    "opentsne-fft",
+    "mrs-tsne-bh",
+    "mrs-tsne-fft",
+    "umap-learn",
+    "umap-learn-legacy",
+    "mrs-umap",
+    "ncvis",
+]
+budgets = [0.125, 0.25, 0.5, 1.0, 2.0]
+seed = 0
+# Algorithms whose local score still rises by more than this between the two largest budgets
+# get one more run at extend_budget.
+extend_min_gain = 0.002
+extend_budget = 4.0
+# Local scores are estimated on this many fixed anchor points (ranks stay exact over all N).
+anchor_rows = 10000
+results_dir = "results/curves"

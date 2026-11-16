@@ -1,0 +1,88 @@
+"""Load `benchmark.toml` into frozen dataclasses."""
+
+import tomllib
+from dataclasses import dataclass, replace
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class RunConfig:
+    datasets: tuple[str, ...]
+    algorithms: tuple[str, ...]
+    seeds: tuple[int, ...]
+    n_threads: int
+    timeout_s: float
+    cooldown_s: float
+    warmup_rows: int
+    data_dir: Path
+    results_dir: Path
+
+
+@dataclass(frozen=True)
+class MetricsConfig:
+    k_local: tuple[int, ...]
+    k_clusters: tuple[int, ...]
+    recall_k: int
+    n_random_pairs: int
+    chunk_rows: int
+    anchor_rows: int | None = None
+
+    @property
+    def k_max(self) -> int:
+        return max(*self.k_local, self.recall_k)
+
+
+@dataclass(frozen=True)
+class CurvesConfig:
+    algorithms: tuple[str, ...]
+    budgets: tuple[float, ...]
+    seed: int
+    extend_min_gain: float
+    extend_budget: float
+    anchor_rows: int
+    results_dir: Path
+
+
+@dataclass(frozen=True)
+class Config:
+    run: RunConfig
+    metrics: MetricsConfig
+    curves: CurvesConfig
+
+    def with_run(self, **overrides) -> "Config":
+        present = {key: value for key, value in overrides.items() if value is not None}
+        return replace(self, run=replace(self.run, **present))
+
+
+def load_config(path: Path) -> Config:
+    raw = tomllib.loads(path.read_text())
+    run, metrics, curves = raw["run"], raw["metrics"], raw["curves"]
+    return Config(
+        run=RunConfig(
+            datasets=tuple(run["datasets"]),
+            algorithms=tuple(run["algorithms"]),
+            seeds=tuple(run["seeds"]),
+            n_threads=int(run["n_threads"]),
+            timeout_s=float(run["timeout_s"]),
+            cooldown_s=float(run["cooldown_s"]),
+            warmup_rows=int(run["warmup_rows"]),
+            data_dir=Path(run["data_dir"]),
+            results_dir=Path(run["results_dir"]),
+        ),
+        metrics=MetricsConfig(
+            k_local=tuple(metrics["k_local"]),
+            k_clusters=tuple(metrics["k_clusters"]),
+            recall_k=int(metrics["recall_k"]),
+            n_random_pairs=int(metrics["n_random_pairs"]),
+            chunk_rows=int(metrics["chunk_rows"]),
+        ),
+        curves=CurvesConfig(
+            algorithms=tuple(curves["algorithms"]),
+            budgets=tuple(float(b) for b in curves["budgets"]),
+            seed=int(curves["seed"]),
+            extend_min_gain=float(curves["extend_min_gain"]),
+            extend_budget=float(curves["extend_budget"]),
+            anchor_rows=int(curves["anchor_rows"]),
+            results_dir=Path(curves["results_dir"]),
+        ),
+    )
