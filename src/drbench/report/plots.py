@@ -232,12 +232,12 @@ def spread_labels(ax, labelled: list[tuple[str, float, float]]) -> None:
 
 
 def plot_quality_map(points, dataset: str, path: Path) -> None:
-    """Local vs global score per algorithm, one panel per N, mean ± sd over seeds.
-    Up and right is better on both axes."""
+    """Local vs global score per algorithm, one panel per N stacked vertically, mean ± sd over
+    seeds. Up and right is better on both axes."""
     names = sorted({p.algorithm for p in points})
     colors = algorithm_colors(names)
     sizes = sorted({p.n for p in points})
-    fig, axes = plt.subplots(1, len(sizes), figsize=(5.8 * len(sizes), 5.2), facecolor=SURFACE,
+    fig, axes = plt.subplots(len(sizes), 1, figsize=(9, 4.6 * len(sizes)), facecolor=SURFACE,
                              sharex=True, sharey=True)
     for ax, n in zip(np.atleast_1d(axes), sizes):
         style_axes(ax)
@@ -251,18 +251,19 @@ def plot_quality_map(points, dataset: str, path: Path) -> None:
                        linewidths=2, zorder=3)
             labelled.append((p.algorithm, x, y))
         ax.set_title(f"N = {n:,}", color=TEXT_PRIMARY, fontsize=10)
-        ax.set_xlabel("Global: random-pair Spearman ρ  →", color=TEXT_SECONDARY, fontsize=9)
+        ax.set_ylabel("Local: mean trustworthiness  →", color=TEXT_SECONDARY, fontsize=9)
+        ax.tick_params(labelbottom=True)
         ax.autoscale_view()
         spread_labels(ax, labelled)
-    np.atleast_1d(axes)[0].set_ylabel("Local: mean trustworthiness  →", color=TEXT_SECONDARY,
-                                      fontsize=9)
+    np.atleast_1d(axes)[-1].set_xlabel("Global: random-pair Spearman ρ  →", color=TEXT_SECONDARY,
+                                       fontsize=9)
     right = max(p.mean["global"] for p in points)
     for ax in np.atleast_1d(axes):
         ax.set_xlim(right=right + 0.09)  # room for labels right of the points
     handles = [plt.Line2D([], [], color=TEXT_SECONDARY, marker=LIBRARY_MARKERS.get(lib, "o"),
                           linestyle="", label=lib)
                for lib in sorted({p.library for p in points})]
-    fig.suptitle(f"Projection quality — {dataset} (mean ± sd over seeds; up and right is better)",
+    fig.suptitle(f"Projection quality — {dataset}\n(mean ± sd over seeds; up and right is better)",
                  color=TEXT_PRIMARY, fontsize=11)
     fig.tight_layout()
     fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=len(handles),

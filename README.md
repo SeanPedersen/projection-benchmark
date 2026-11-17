@@ -29,7 +29,7 @@ graph, default parameters), on `jinaclip-512-1m` subsampled to N = 10k, 100k and
 
 ![Projection quality: local vs global per N](results/scaling/figures/jinaclip-512-1m-quality-map.png)
 
-| method | combined 10k / 100k / 512k | local @512k | global @512k | fit @512k | peak @512k |
+| method | combined 10k / 100k / 512k | local @512k | global @512k | fit time @512k | peak RAM @512k |
 |---|---|---|---|---|---|
 | mrs-tsne-fft | 0.78 / **0.91** / **0.86** | 0.968 | 0.188 | 73 s | 5.6 GB |
 | opentsne-fft | 0.78 / 0.87 / 0.80 | **0.971** | 0.168 | 242 s | 4.2 GB |

@@ -6,7 +6,7 @@
 
 ## N = 10,000
 
-| algorithm | combined | local (trust.) | global (pair ρ) | triplet | fit s | peak GB |
+| algorithm | combined | local (trust.) | global (pair ρ) | triplet | fit s | peak RAM GB |
 | --- | --- | --- | --- | --- | --- | --- |
 | opentsne-fft-rinnd-default | 0.78 | 0.9070 ± 0.0020 | 0.198 ± 0.021 | 0.568 ± 0.004 | 35.0 | 0.7 |
 | mrs-tsne-fft-rinnd-default | 0.78 | 0.9117 ± 0.0011 | 0.192 ± 0.027 | 0.570 ± 0.005 | 2.4 | 0.6 |
@@ -18,7 +18,7 @@
 
 ## N = 100,000
 
-| algorithm | combined | local (trust.) | global (pair ρ) | triplet | fit s | peak GB |
+| algorithm | combined | local (trust.) | global (pair ρ) | triplet | fit s | peak RAM GB |
 | --- | --- | --- | --- | --- | --- | --- |
 | mrs-tsne-fft-rinnd-default | 0.91 | 0.9572 ± 0.0006 | 0.214 ± 0.014 | 0.578 ± 0.004 | 15.4 | 1.6 |
 | opentsne-fft-rinnd-default | 0.87 | 0.9582 ± 0.0002 | 0.202 ± 0.005 | 0.574 ± 0.002 | 82.9 | 1.6 |
@@ -30,7 +30,7 @@
 
 ## N = 512,000
 
-| algorithm | combined | local (trust.) | global (pair ρ) | triplet | fit s | peak GB |
+| algorithm | combined | local (trust.) | global (pair ρ) | triplet | fit s | peak RAM GB |
 | --- | --- | --- | --- | --- | --- | --- |
 | mrs-tsne-fft-rinnd-default | 0.86 | 0.9683 ± 0.0006 | 0.188 ± 0.018 | 0.569 ± 0.005 | 73.2 | 5.6 |
 | opentsne-fft-rinnd-default | 0.80 | 0.9705 ± 0.0002 | 0.168 ± 0.003 | 0.564 ± 0.001 | 241.8 | 4.2 |

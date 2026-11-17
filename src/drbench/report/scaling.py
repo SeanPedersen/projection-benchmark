@@ -89,7 +89,7 @@ def quality_table(points: list[Point]) -> str:
     """One N: ranked by combined score; time and memory as side columns."""
     combined = combined_scores(points)
     header = ["algorithm", "combined", "local (trust.)", "global (pair ρ)", "triplet",
-              "fit s", "peak GB"]
+              "fit s", "peak RAM GB"]
     rows = [header, ["---"] * len(header)]
     for p in sorted(points, key=lambda p: -combined[p.algorithm]):
         rows.append([
