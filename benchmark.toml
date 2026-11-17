@@ -19,6 +19,7 @@ algorithms = [
     "opentsne-fft-exact",
     "mrs-tsne-fft-nndescent",
     "mrs-tsne-fft-hnsw",
+    "mrs-tsne-fft-rinnd-fast",
 ]
 seeds = [0, 1, 2]
 n_threads = 8

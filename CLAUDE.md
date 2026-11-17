@@ -4,7 +4,7 @@ Benchmark of dimensionality-reduction implementations: quality (local/global) vs
 It is all Python (3.12, uv). Rust and C++ libraries come in through their Python bindings.
 
 ## Commands
-- `uv sync` and `uv run pytest` (41 tests; metric tests compare against sklearn to 1e-12)
+- `uv sync` and `uv run pytest` (42 tests; metric tests compare against sklearn to 1e-12)
 - `uv run ruff check src tests`
 - `uv run drbench {prep,run,evaluate,report,all,curves,knn} [--subsample N --seeds 0,1 --algos a,b --results-dir DIR --timeout S --threads T]`
 - Config: `benchmark.toml`. CLI flags override `[run]`. `[curves]` configures the budget sweep, which writes to `results/curves/`. `[knn]` configures `drbench knn` (`--backends`, `--ks`, `--repeats` override), which writes `results/knn/knn.jsonl` and `KNN.md`.
@@ -16,7 +16,7 @@ It is all Python (3.12, uv). Rust and C++ libraries come in through their Python
   - `budget` multiplies each library's default epochs; t-SNE early exaggeration and NCVis init epochs scale with it.
   - Imports are lazy, so a worker only loads the library it measures.
   - Shared hyperparameters and `scaled_epochs` live in `params.py`.
-  - Variants that differ only in the kNN backend: `umap-learn` (PyNNDescent) vs `umap-learn-rinnd`; `opentsne-fft` (Annoy) vs `-nndescent` / `-exact`; `mrs-tsne-fft` (IVF) vs `-nndescent` / `-hnsw`.
+  - Variants that differ only in the kNN backend: `umap-learn` (PyNNDescent) vs `umap-learn-rinnd`; `opentsne-fft` (Annoy) vs `-nndescent` / `-exact`; `mrs-tsne-fft` (IVF) vs `-nndescent` / `-hnsw` / `-rinnd-fast`. The last builds the graph with RINND (`max_candidates=20, n_iters=4`, recall@90 about 0.90) and passes it to manifolds-rs via `fit_transform(X, knn_indices=, knn_distances=)`: 1.8x faster than IVF, -0.0014 trustworthiness, +420 MB peak (issue #1).
 - `runner/`:
   - `orchestrator.py` spawns one `worker.py` process per run and handles timeouts and resume.
   - `memory.py` reads VmHWM.

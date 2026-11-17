@@ -57,6 +57,8 @@ REGISTRY: dict[str, Algorithm] = {
                   tsne.manifolds_fft_nndescent, tsne.MANIFOLDS_TSNE_EPOCHS),
         Algorithm("mrs-tsne-fft-hnsw", "t-sne", "manifolds-rs", "rust", "pca",
                   tsne.manifolds_fft_hnsw, tsne.MANIFOLDS_TSNE_EPOCHS),
+        Algorithm("mrs-tsne-fft-rinnd-fast", "t-sne", "manifolds-rs", "rust", "pca",
+                  tsne.manifolds_fft_rinnd_fast, tsne.MANIFOLDS_TSNE_EPOCHS),
         Algorithm("umap-learn", "umap", "umap-learn", "python/numba", "recursive", umap.umap_learn,
                   umap.UMAP_LEARN_EPOCHS_LARGE),
         Algorithm("umap-learn-rinnd", "umap", "umap-learn", "python/rust", "recursive",
