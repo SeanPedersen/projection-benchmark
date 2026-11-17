@@ -195,78 +195,40 @@ def plot_curves(points: list[dict], dataset: str, path: Path) -> None:
 
 # Projection quality map: local (trustworthiness) vs global (pair ρ), one panel per N, one point
 # per algorithm. Colour slot = position in the sorted name list, so a colour follows its algorithm.
-MAP_LABEL_GAP = 0.05  # minimum vertical gap between labels, axes fraction
-MAP_LABEL_DX = 7
-
-
 def algorithm_colors(names: list[str]) -> dict[str, str]:
     return {name: CATEGORICAL[i % len(CATEGORICAL)] for i, name in enumerate(sorted(names))}
 
 
-def spread_positions(desired: list[float], gap: float) -> list[float]:
-    """Positions (ascending input) at least `gap` apart, each colliding group centred on the
-    mean of its desired positions, so labels move as little as possible."""
-    groups: list[list[float]] = []  # each: desired positions of one group
-    def placed(group: list[float]) -> list[float]:
-        start = float(np.mean(group)) - gap * (len(group) - 1) / 2
-        return [start + gap * i for i in range(len(group))]
-    for y in desired:
-        groups.append([y])
-        while len(groups) > 1 and placed(groups[-2])[-1] + gap > placed(groups[-1])[0]:
-            groups[-2:] = [groups[-2] + groups[-1]]
-    return [y for group in groups for y in placed(group)]
-
-
-def spread_labels(ax, labelled: list[tuple[str, float, float]]) -> None:
-    """Labels right of their points, spread vertically so none overlap."""
-    to_axes = ax.transAxes.inverted().transform
-    placed = sorted(
-        ((name, x, y, to_axes(ax.transData.transform((x, y)))[1]) for name, x, y in labelled),
-        key=lambda item: item[3],
-    )
-    targets = spread_positions([item[3] for item in placed], MAP_LABEL_GAP)
-    for (name, x, y, y_axes), target in zip(placed, targets):
-        dy_points = (target - y_axes) * ax.bbox.height * 72 / ax.figure.dpi
-        ax.annotate(name, (x, y), textcoords="offset points", xytext=(MAP_LABEL_DX, dy_points),
-                    va="center", fontsize=8, color=TEXT_PRIMARY)
+def short_name(algorithm: str) -> str:
+    return algorithm.removesuffix("-rinnd-default").removesuffix("-rinnd-fast")
 
 
 def plot_quality_map(points, dataset: str, path: Path) -> None:
-    """Local vs global score per algorithm, one panel per N stacked vertically, mean ± sd over
-    seeds. Up and right is better on both axes."""
+    """Local vs global score (mean over seeds) per algorithm, one panel per N stacked
+    vertically. Up and right is better on both axes. Identity: colour + marker, one legend."""
     names = sorted({p.algorithm for p in points})
     colors = algorithm_colors(names)
+    markers = {p.algorithm: LIBRARY_MARKERS.get(p.library, "o") for p in points}
     sizes = sorted({p.n for p in points})
-    fig, axes = plt.subplots(len(sizes), 1, figsize=(9, 4.6 * len(sizes)), facecolor=SURFACE,
+    fig, axes = plt.subplots(len(sizes), 1, figsize=(8, 4.2 * len(sizes)), facecolor=SURFACE,
                              sharex=True, sharey=True)
     for ax, n in zip(np.atleast_1d(axes), sizes):
         style_axes(ax)
-        labelled = []
         for p in (p for p in points if p.n == n):
-            x, y = p.mean["global"], p.mean["local"]
-            ax.errorbar(x, y, xerr=p.sd["global"], yerr=p.sd["local"], fmt="none",
-                        ecolor=colors[p.algorithm], elinewidth=1, alpha=0.6, zorder=2)
-            ax.scatter(x, y, s=MARKER_SIZE, color=colors[p.algorithm],
-                       marker=LIBRARY_MARKERS.get(p.library, "o"), edgecolors=SURFACE,
-                       linewidths=2, zorder=3)
-            labelled.append((p.algorithm, x, y))
-        ax.set_title(f"N = {n:,}", color=TEXT_PRIMARY, fontsize=10)
-        ax.set_ylabel("Local: mean trustworthiness  →", color=TEXT_SECONDARY, fontsize=9)
+            ax.scatter(p.mean["global"], p.mean["local"], s=MARKER_SIZE * 1.6,
+                       color=colors[p.algorithm], marker=markers[p.algorithm],
+                       edgecolors=SURFACE, linewidths=1.5, zorder=3)
+        ax.set_title(f"N = {n:,}", color=TEXT_PRIMARY, fontsize=10, loc="left")
+        ax.set_ylabel("Local (trustworthiness) →", color=TEXT_SECONDARY, fontsize=9)
         ax.tick_params(labelbottom=True)
-        ax.autoscale_view()
-        spread_labels(ax, labelled)
-    np.atleast_1d(axes)[-1].set_xlabel("Global: random-pair Spearman ρ  →", color=TEXT_SECONDARY,
-                                       fontsize=9)
-    right = max(p.mean["global"] for p in points)
-    for ax in np.atleast_1d(axes):
-        ax.set_xlim(right=right + 0.09)  # room for labels right of the points
-    handles = [plt.Line2D([], [], color=TEXT_SECONDARY, marker=LIBRARY_MARKERS.get(lib, "o"),
-                          linestyle="", label=lib)
-               for lib in sorted({p.library for p in points})]
-    fig.suptitle(f"Projection quality — {dataset}\n(mean ± sd over seeds; up and right is better)",
+    np.atleast_1d(axes)[-1].set_xlabel("Global (random-pair Spearman ρ) →",
+                                       color=TEXT_SECONDARY, fontsize=9)
+    handles = [plt.Line2D([], [], color=colors[name], marker=markers[name], markersize=9,
+                          linestyle="", label=short_name(name)) for name in names]
+    fig.suptitle(f"Projection quality — {dataset} (mean over 3 seeds, up and right is better)",
                  color=TEXT_PRIMARY, fontsize=11)
-    fig.tight_layout()
-    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=len(handles),
-               frameon=False, fontsize=8, labelcolor=TEXT_SECONDARY)
+    fig.tight_layout(rect=(0, 0, 1, 0.98))
+    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=4,
+               frameon=False, fontsize=9, labelcolor=TEXT_PRIMARY)
     fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor=SURFACE)
     plt.close(fig)
