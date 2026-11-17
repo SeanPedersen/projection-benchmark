@@ -3,13 +3,17 @@
 The kNN graph comes from HNSW. The stock settings (M=8, ef_construction=100, query ef=k+1) reach
 only ~0.85 recall@15 on 512-d embeddings, so two variants raise it: `ef64` (stock graph, wider
 query, ~0.94) and `hq` (denser graph and wider query, ~0.99). `ef_search` is a drbench patch to
-the vendored source.
+the vendored source. A second patch (`fit_transform(X, knn_indices=, knn_distances=)`) skips the
+HNSW search and embeds a given graph; `ncvis-rinnd-fast` uses it with the shared RINND graph.
+NCVis only uses the distances to order each row, and its own search returns squared euclidean
+ones, so the RINND distances are squared to match.
 """
 
 from functools import partial
 
 import numpy as np
 
+from drbench.algorithms import knn_graph
 from drbench.algorithms.params import MIN_DIST, N_NEIGHBORS, scaled_epochs
 
 NCVIS_EPOCHS = 50
@@ -30,6 +34,7 @@ def _ncvis(
     m: int = STOCK_M,
     ef_construction: int = STOCK_EF_CONSTRUCTION,
     ef_search: int | None = None,
+    shared_graph: bool = False,
 ) -> np.ndarray:
     from ncvis import NCVis
 
@@ -45,7 +50,10 @@ def _ncvis(
         n_init_epochs=scaled_epochs(NCVIS_INIT_EPOCHS, budget),
         random_seed=seed,
     )
-    return model.fit_transform(X)
+    if not shared_graph:
+        return model.fit_transform(X)
+    indices, distances = knn_graph.rinnd_graph(X, N_NEIGHBORS, n_threads)
+    return model.fit_transform(X, knn_indices=indices, knn_distances=np.square(distances))
 
 
 ncvis = _ncvis
@@ -53,3 +61,4 @@ ncvis_ef64 = partial(_ncvis, ef_search=WIDE_EF_SEARCH)
 ncvis_hq = partial(
     _ncvis, m=DENSE_M, ef_construction=DENSE_EF_CONSTRUCTION, ef_search=WIDE_EF_SEARCH
 )
+ncvis_rinnd_fast = partial(_ncvis, shared_graph=True)

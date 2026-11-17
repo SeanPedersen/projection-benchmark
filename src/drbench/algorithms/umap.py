@@ -4,12 +4,17 @@ Default epochs:
 - umap-learn: 200 for N > 10k, 500 below, in both pipelines. The kNN backend is pinned per variant.
 - manifolds-rs UMAP: 500 with the Adam optimiser.
 - manifolds-rs PaCMAP: 450.
+
+The `-rinnd-fast` variants take the shared RINND graph (`knn_graph.py`) as a precomputed kNN
+graph: k=15 for UMAP (umap-learn counts the point itself), `n_near + 50` = 60 for PaCMAP, which
+picks its near pairs from that wider search.
 """
 
 from functools import partial
 
 import numpy as np
 
+from drbench.algorithms import knn_graph
 from drbench.algorithms.params import MIN_DIST, N_NEIGHBORS, scaled_epochs
 
 UMAP_LEARN_SMALL_N = 10_000
@@ -17,10 +22,19 @@ UMAP_LEARN_EPOCHS_SMALL = 500
 UMAP_LEARN_EPOCHS_LARGE = 200
 MANIFOLDS_UMAP_EPOCHS = 500
 MANIFOLDS_PACMAP_EPOCHS = 450
+PACMAP_N_NEAR = 10
+PACMAP_SEARCH_WIDTH = PACMAP_N_NEAR + 50
 
 
 def _umap_learn(
-    X: np.ndarray, seed: int, n_threads: int, budget: float, *, legacy: bool, nn_backend: str
+    X: np.ndarray,
+    seed: int,
+    n_threads: int,
+    budget: float,
+    *,
+    legacy: bool,
+    nn_backend: str,
+    shared_graph: bool = False,
 ) -> np.ndarray:
     import umap
 
@@ -36,6 +50,10 @@ def _umap_learn(
         random_state=None,
         compatibility_layout=legacy,
         nearest_neighbor_backend=nn_backend,
+        precomputed_knn=(
+            knn_graph.with_self(*knn_graph.rinnd_graph(X, N_NEIGHBORS, n_threads), N_NEIGHBORS)
+            if shared_graph else (None, None, None)
+        ),
     )
     return model.fit_transform(X)
 
@@ -44,11 +62,19 @@ def _umap_learn(
 # Pinning the backend keeps every variant reproducible across environments.
 umap_learn = partial(_umap_learn, legacy=False, nn_backend="pynndescent")
 umap_learn_rinnd = partial(_umap_learn, legacy=False, nn_backend="rinnd")
+umap_learn_rinnd_fast = partial(_umap_learn, legacy=False, nn_backend="rinnd", shared_graph=True)
 # umap-learn 0.5.x pipeline: spectral initialization + SGD layout (always PyNNDescent).
 umap_learn_legacy = partial(_umap_learn, legacy=True, nn_backend="auto")
 
 
-def manifolds_umap(X: np.ndarray, seed: int, n_threads: int, budget: float) -> np.ndarray:
+def shared_graph_kwargs(X: np.ndarray, k: int, n_threads: int) -> dict:
+    indices, distances = knn_graph.rinnd_graph(X, k, n_threads)
+    return {"knn_indices": indices, "knn_distances": distances}
+
+
+def _manifolds_umap(
+    X: np.ndarray, seed: int, n_threads: int, budget: float, *, shared_graph: bool = False
+) -> np.ndarray:
     import manifolds_rs as mf
 
     mf.set_num_threads(n_threads)
@@ -59,12 +85,23 @@ def manifolds_umap(X: np.ndarray, seed: int, n_threads: int, budget: float) -> n
         n_epochs=scaled_epochs(MANIFOLDS_UMAP_EPOCHS, budget),
         seed=seed,
     )
-    return model.fit_transform(X)
+    knn = shared_graph_kwargs(X, N_NEIGHBORS, n_threads) if shared_graph else {}
+    return model.fit_transform(X, **knn)
 
 
-def manifolds_pacmap(X: np.ndarray, seed: int, n_threads: int, budget: float) -> np.ndarray:
+def _manifolds_pacmap(
+    X: np.ndarray, seed: int, n_threads: int, budget: float, *, shared_graph: bool = False
+) -> np.ndarray:
     import manifolds_rs as mf
 
     mf.set_num_threads(n_threads)
-    model = mf.PaCMAP(n_components=2, n_epochs=scaled_epochs(MANIFOLDS_PACMAP_EPOCHS, budget), seed=seed)
-    return model.fit_transform(X)
+    model = mf.PaCMAP(n_components=2, n_near=PACMAP_N_NEAR,
+                      n_epochs=scaled_epochs(MANIFOLDS_PACMAP_EPOCHS, budget), seed=seed)
+    knn = shared_graph_kwargs(X, PACMAP_SEARCH_WIDTH, n_threads) if shared_graph else {}
+    return model.fit_transform(X, **knn)
+
+
+manifolds_umap = _manifolds_umap
+manifolds_umap_rinnd_fast = partial(_manifolds_umap, shared_graph=True)
+manifolds_pacmap = _manifolds_pacmap
+manifolds_pacmap_rinnd_fast = partial(_manifolds_pacmap, shared_graph=True)

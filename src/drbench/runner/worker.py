@@ -7,6 +7,8 @@ full data. The embedding is written to `.npy`; timing and memory go to a sidecar
 CPU time (user + system, summed over all threads) is measured alongside wall time, because
 implementations differ in how well they use the available cores.
 Peak RSS still includes everything resident at the start: interpreter, data, loaded libraries.
+`-rinnd-fast` variants share kNN graphs across runs (`algorithms/knn_graph.py`); a run that loads
+one is charged the stored build time and extra memory, recorded as `shared_knn_s`.
 """
 
 import argparse
@@ -17,6 +19,8 @@ import time
 from pathlib import Path
 
 from drbench.runner import memory
+
+GRAPH_DIR = "graphs"
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,6 +48,7 @@ def main() -> None:
     import numpy as np
 
     from drbench import algorithms, datasets
+    from drbench.algorithms import knn_graph
 
     algorithm = algorithms.get(args.algorithm)
     X = datasets.load(args.dataset, args.data_dir)
@@ -51,17 +56,21 @@ def main() -> None:
         algorithm.fit_transform(X[: args.warmup_rows].copy(), args.seed, args.threads, args.budget)
     memory.reset_peak_rss()
     baseline_kb = memory.current_rss_kb()
+    knn_graph.enable_cache(datasets.cache_dir(args.dataset, args.data_dir) / GRAPH_DIR, baseline_kb)
 
     start, cpu_start = time.perf_counter(), cpu_seconds()
     Y = np.asarray(algorithm.fit_transform(X, args.seed, args.threads, args.budget), dtype=np.float32)
     fit_s, cpu_s = time.perf_counter() - start, cpu_seconds() - cpu_start
     peak_kb = memory.peak_rss_kb()
+    shared = knn_graph.charged_cost()
+    fit_s += shared.build_s
+    peak_kb = max(peak_kb, baseline_kb + shared.extra_rss_kb)
 
     args.embedding_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(args.embedding_path, Y)
     sidecar = {
         "fit_s": fit_s, "cpu_s": cpu_s, "baseline_rss_kb": baseline_kb, "peak_rss_kb": peak_kb,
-        "n": len(X), "dim": X.shape[1],
+        "n": len(X), "dim": X.shape[1], "shared_knn_s": shared.build_s,
     }
     args.embedding_path.with_suffix(".json").write_text(json.dumps(sidecar))
 

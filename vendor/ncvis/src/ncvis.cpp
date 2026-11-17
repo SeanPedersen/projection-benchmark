@@ -395,52 +395,33 @@ void ncvis::NCVis::fit_transform(const float *const X, size_t N, size_t D, float
     delete space_;
     space_ = nullptr;
 
-#if defined(DEBUG)
-    t2 = std::chrono::high_resolution_clock::now();
-    std::cout << "findKNN: "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count()
-              << " ms\n";
-    t1 = std::chrono::high_resolution_clock::now();
-#endif
+    embed(table, N, k, Y);
+}
+
+void ncvis::NCVis::fit_transform_knn(const long *const inds, const float *const dists, size_t N, size_t k, float *Y) {
+    if (N == 0 || k == 0) {
+        throw std::runtime_error("[ncvis::NCVis::fit_transform_knn] Graph should have at least one edge.");
+    }
+    if (Y == nullptr) {
+        throw std::runtime_error("[ncvis::NCVis::fit_transform_knn] Null pointer provided for output.");
+    }
+    KNNTable table(N, k);
+#pragma omp parallel for
+    for (long long i = 0; i < (long long)N; ++i) {
+        table.inds[i].assign(inds + i * k, inds + (i + 1) * k);
+        table.dists[i].assign(dists + i * k, dists + (i + 1) * k);
+    }
+    embed(table, N, k, Y);
+}
+
+void ncvis::NCVis::embed(ncvis::KNNTable &table, size_t N, size_t k, float *Y) {
     table.symmetrize();
-#if defined(DEBUG)
-    t2 = std::chrono::high_resolution_clock::now();
-    std::cout << "symmetrize: "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count()
-              << " ms\n";
-    t1 = std::chrono::high_resolution_clock::now();
-#endif
     std::vector<ncvis::Edge> edges = build_edges(table);
-#if defined(DEBUG)
-    t2 = std::chrono::high_resolution_clock::now();
-    std::cout << "build_edges: "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count()
-              << " ms\n";
-#endif
     // Normalization
     float Q = 0.;
     float init_alpha = 1. / k;
-
-#if defined(DEBUG)
-    t1 = std::chrono::high_resolution_clock::now();
-#endif
-
     init_embedding(N, Y, init_alpha, edges);
-
-#if defined(DEBUG)
-    t2 = std::chrono::high_resolution_clock::now();
-    std::cout << "initialize: "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count()
-              << " ms\n";
-    t1 = std::chrono::high_resolution_clock::now();
-#endif
     optimize(N, Y, Q, edges);
-#if defined(DEBUG)
-    t2 = std::chrono::high_resolution_clock::now();
-    std::cout << "optimize: "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count()
-              << " ms\n";
-#endif
     // printf("============DISTANCES==========\n");
     // for (size_t i=0; i<N; ++i){
     //     printf("[");

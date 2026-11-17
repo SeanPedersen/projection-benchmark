@@ -65,6 +65,12 @@ class NCVis {
     @param Y Pointer to the embedding [N, d]. The j-th coordinate of i-th sample is assumed to be found at (X+d*i+j).
     */
     void fit_transform(const float *const X, size_t N, size_t D, float *Y);
+    /*!
+    @brief (drbench patch) Embed from a precomputed kNN graph instead of the HNSW search.
+    @param inds Row-major N x k neighbour indices, without the point itself.
+    @param dists Row-major N x k distances; only their order per row is used (symmetrization).
+    */
+    void fit_transform_knn(const long *const inds, const float *const dists, size_t N, size_t k, float *Y);
 
    private:
     size_t d_;
@@ -90,6 +96,7 @@ class NCVis {
     void buildKNN(const float *const X, size_t N, size_t D);
     KNNTable findKNN(const float *const X, size_t N, size_t D, size_t k);
     std::vector<Edge> build_edges(KNNTable &table);
+    void embed(KNNTable &table, size_t N, size_t k, float *Y);
     void init_embedding(size_t N, float *Y, float alpha, std::vector<ncvis::Edge> &edges);
     void optimize(size_t N, float *Y, float &Q, std::vector<ncvis::Edge> &edges);
 };

@@ -45,6 +45,9 @@ cdef class NCVisWrapper:
     def fit_transform(self, float[:, :] X, float[:, :] Y):
         self.c_ncvis.fit_transform(&X[0, 0], X.shape[0], X.shape[1], &Y[0, 0])
 
+    def fit_transform_knn(self, long[:, ::1] inds, float[:, ::1] dists, float[:, :] Y):
+        self.c_ncvis.fit_transform_knn(&inds[0, 0], &dists[0, 0], inds.shape[0], inds.shape[1], &Y[0, 0])
+
 class NCVis:
     def __init__(self, d=2, n_threads=-1, n_neighbors=15, M=8, ef_construction=100, random_seed=42, n_epochs=50, n_init_epochs=20, spread=1., min_dist=0.4, a=None, b=None, alpha=1., alpha_Q=1., n_noise=None, distance="euclidean", ef_search=None):
         """
@@ -142,7 +145,7 @@ class NCVis:
 
         self.model = NCVisWrapper(d, n_threads, n_neighbors, M, ef_construction, random_seed, n_epochs, n_init_epochs, a, b, alpha, alpha_Q, negative_plan, distances[distance], 0 if ef_search is None else ef_search)
 
-    def fit_transform(self, X):
+    def fit_transform(self, X, knn_indices=None, knn_distances=None):
         """
         Builds an embedding for given points.
 
@@ -150,6 +153,10 @@ class NCVis:
         ----------
         X : ndarray of size [n_samples, n_high_dimensions]
             The data samples. Will be converted to float by default.
+        knn_indices, knn_distances : ndarray of size [n_samples, k], optional
+            (drbench patch) Precomputed kNN graph without the point itself. When given, the HNSW
+            search is skipped and X is only used for its number of rows. Distances only order
+            each row's neighbours; pass squared euclidean ones to match the built-in search.
 
         Returns:
         --------
@@ -157,6 +164,13 @@ class NCVis:
             The embedding of the data samples.
         """
         Y = np.empty((X.shape[0], self.d), dtype=np.float32)
+        if knn_indices is not None:
+            inds = np.ascontiguousarray(knn_indices, dtype=np.int_)
+            dists = np.ascontiguousarray(knn_distances, dtype=np.float32)
+            if inds.shape != dists.shape or inds.shape[0] != X.shape[0]:
+                raise ValueError(f"knn graph must be [n_samples, k], got {inds.shape} and {dists.shape}")
+            self.model.fit_transform_knn(inds, dists, Y)
+            return Y
         self.model.fit_transform(np.ascontiguousarray(X, dtype=np.float32),
                                  np.ascontiguousarray(Y, dtype=np.float32))
 

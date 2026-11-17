@@ -4,7 +4,7 @@ Benchmark of dimensionality-reduction implementations: quality (local/global) vs
 It is all Python (3.12, uv). Rust and C++ libraries come in through their Python bindings.
 
 ## Commands
-- `uv sync` and `uv run pytest` (43 tests; metric tests compare against sklearn to 1e-12)
+- `uv sync` and `uv run pytest` (50 tests; metric tests compare against sklearn to 1e-12)
 - `uv run ruff check src tests`
 - `uv run drbench {prep,run,evaluate,report,all,curves,knn} [--subsample N --seeds 0,1 --algos a,b --results-dir DIR --timeout S --threads T]`
 - Config: `benchmark.toml`. CLI flags override `[run]`. `[curves]` configures the budget sweep, which writes to `results/curves/`. `[knn]` configures `drbench knn` (`--backends`, `--ks`, `--repeats` override), which writes `results/knn/knn.jsonl` and `KNN.md`.
@@ -16,7 +16,9 @@ It is all Python (3.12, uv). Rust and C++ libraries come in through their Python
   - `budget` multiplies each library's default epochs; t-SNE early exaggeration and NCVis init epochs scale with it.
   - Imports are lazy, so a worker only loads the library it measures.
   - Shared hyperparameters and `scaled_epochs` live in `params.py`.
-  - Variants that differ only in the kNN backend: `umap-learn` (PyNNDescent) vs `umap-learn-rinnd`; `opentsne-fft` (Annoy) vs `-nndescent` / `-exact`; `mrs-tsne-fft` (IVF) vs `-nndescent` / `-hnsw` / `-rinnd-fast`. The last builds the graph with RINND (`max_candidates=20, n_iters=4`, recall@90 about 0.90) and passes it to manifolds-rs via `fit_transform(X, knn_indices=, knn_distances=)`: 1.8x faster than IVF, -0.0014 trustworthiness, +420 MB peak (issue #1).
+  - Variants that differ only in the kNN backend: `umap-learn` (PyNNDescent) vs `umap-learn-rinnd`; `opentsne-fft` (Annoy) vs `-nndescent` / `-exact`; `mrs-tsne-fft` (IVF) vs `-nndescent` / `-hnsw`.
+  - `-rinnd-fast` variants (`opentsne-fft`, `mrs-tsne-fft`, `umap-learn`, `mrs-umap`, `mrs-pacmap`, `ncvis`) take a precomputed RINND graph from `knn_graph.py`: schedule per k (k=15 defaults, k=60/90 `max_candidates=20, n_iters=4`). Graphs are cached in `data/<spec>/graphs/` and shared across algorithms and seeds; a run that loads one is charged its stored build time (added to `fit_s`, also in `shared_knn_s`) and extra peak RSS. CPU time is not charged.
+  - Graph layouts differ: manifolds-rs and openTSNE take it as is (euclidean, no self); umap-learn needs the point itself as first neighbour (`with_self`); NCVis gets squared distances.
 - `runner/`:
   - `orchestrator.py` spawns one `worker.py` process per run and handles timeouts and resume.
   - `memory.py` reads VmHWM.
@@ -32,7 +34,7 @@ It is all Python (3.12, uv). Rust and C++ libraries come in through their Python
 - `report/`: `tables.py` aggregates; `plots.py` draws the Pareto charts, curves and thumbnails (dataviz palette); `__init__.py` writes `REPORT.md`; `curves.py` writes `CURVES.md`; `knn.py` writes `KNN.md`.
 
 ## Gotchas
-- `ncvis` is vendored in `vendor/ncvis`: the 1.5.13 sdist from 2023, patched with a `<size_t*>` cast so it cythonizes against NumPy 2. A second patch adds `ef_search` (HNSW query ef, 0 = stock), used by the `ncvis-ef64` and `ncvis-hq` variants. With stock settings, recall@15 is only ~0.85 on 512-d data. After editing it, rebuild with `uv sync --reinstall-package ncvis`.
+- `ncvis` is vendored in `vendor/ncvis`: the 1.5.13 sdist from 2023, patched with a `<size_t*>` cast so it cythonizes against NumPy 2. A second patch adds `ef_search` (HNSW query ef, 0 = stock), used by the `ncvis-ef64` and `ncvis-hq` variants. A third adds `fit_transform(X, knn_indices=, knn_distances=)` (C++ `fit_transform_knn`), which skips HNSW and embeds a given graph (`ncvis-rinnd-fast`). With stock settings, recall@15 is only ~0.85 on 512-d data. After editing it, rebuild with `uv sync --reinstall-package ncvis`.
 - `umap-learn` must use `random_state=None`, since a fixed seed forces it single-threaded. The adapter seeds numpy's global RNG instead.
 - `umap-learn` pins `nearest_neighbor_backend` per variant (0.6 would otherwise pick RINND whenever it is installed). umap-learn uses exact distances below 4096 rows, so `warmup_rows` must exceed that or PyNNDescent's numba JIT (about 40 s on 100k x 512) lands in the timed run. Measured: `umap-learn` 66 s with 2000 warm-up rows, 23 s with 5000; RINND is compiled Rust and takes 23 s either way. Fit times of `umap-learn` and `umap-learn-legacy` recorded in `results/` before this fix include JIT.
 - Never measure memory with `ru_maxrss` from wait4: it includes the parent's RSS at fork. Workers must not import heavy modules they don't need (pyarrow and niquests are imported lazily in `datasets/dbpedia.py`).
