@@ -1,7 +1,11 @@
-"""Scaling report: one dataset at several subsample sizes (`name@N`), every algorithm, all seeds.
+"""Scaling report: projection quality of every algorithm on one dataset at several sizes (`name@N`).
 
-Writes `SCALING.md` (algorithm × N table, mean ± sd over seeds) and three charts into the results
-directory: time vs N (fit and kNN graph build), peak memory vs N, quality vs N.
+Quality is local structure (mean trustworthiness) and global structure (random-pair ρ) together:
+- a map per N (`plot_quality_map`): local vs global, one point per algorithm;
+- a table per N, ranked by `combined` = mean of local and global after min-max scaling each across
+  the algorithms at that N (1 = best of the compared methods on both). It is relative: it ranks
+  methods within one N and changes when the set of methods changes.
+Fit time and peak memory stay as side columns. Mean ± sd over seeds.
 """
 
 from collections import defaultdict
@@ -11,27 +15,14 @@ from pathlib import Path
 import numpy as np
 
 from drbench import algorithms, datasets
-from drbench.algorithms.params import N_NEIGHBORS
-from drbench.algorithms.tsne import TSNE_NEIGHBORS
-from drbench.algorithms.umap import PACMAP_SEARCH_WIDTH
 from drbench.config import Config
-from drbench.report.plots import plot_scaling_memory, plot_scaling_quality, plot_scaling_time
+from drbench.report.plots import plot_quality_map
 from drbench.runner.evaluate import current_scores
 from drbench.runner.records import latest_by_key, read_jsonl, runs_path
 
-COLUMNS = (  # (record field, header, format)
-    ("fit_s", "fit s", "{:.1f}"),
-    ("knn_s", "kNN s", "{:.1f}"),
-    ("layout_s", "layout s", "{:.1f}"),
-    ("peak_rss_mb", "peak MB", "{:.0f}"),
-    ("local", "local", "{:.4f}"),
-    ("global", "global", "{:.3f}"),
-    ("triplet_acc", "triplet", "{:.3f}"),
-)
-MISSING = "–"
-# Neighbour count of the shared graph each family uses; families with equal k share one graph.
-GRAPH_K = {"umap": N_NEIGHBORS, "ncvis": N_NEIGHBORS, "pacmap": PACMAP_SEARCH_WIDTH,
-           "t-sne": TSNE_NEIGHBORS}
+FIELDS = ("local", "global", "triplet_acc", "fit_s", "knn_s", "peak_rss_mb")
+COMBINED_FROM = ("local", "global")
+MB_PER_GB = 1024
 
 
 @dataclass(frozen=True)
@@ -45,10 +36,6 @@ class Point:
     sd: dict[str, float]
 
     @property
-    def family(self) -> str:
-        return algorithms.get(self.algorithm).family
-
-    @property
     def library(self) -> str:
         return algorithms.get(self.algorithm).library
 
@@ -56,7 +43,7 @@ class Point:
 def joined_records(
     results_dir: Path, specs: tuple[str, ...], names: tuple[str, ...]
 ) -> dict[tuple[str, int], list[dict]]:
-    """Successful, scored runs of `names` grouped by (algorithm, N), with derived `layout_s`."""
+    """Successful, scored runs of `names` grouped by (algorithm, N)."""
     runs = latest_by_key(read_jsonl(runs_path(results_dir)))
     scores = current_scores(results_dir)
     grouped: dict[tuple[str, int], list[dict]] = defaultdict(list)
@@ -64,9 +51,8 @@ def joined_records(
         if (key.dataset not in specs or key.algorithm not in names or run["status"] != "ok"
                 or key not in scores):
             continue
-        knn_s = run.get("knn_s") or 0.0
         grouped[(key.algorithm, run["n"])].append(
-            run | scores[key] | {"knn_s": knn_s, "layout_s": run["fit_s"] - knn_s}
+            run | scores[key] | {"knn_s": run.get("knn_s") or 0.0}
         )
     return grouped
 
@@ -74,7 +60,7 @@ def joined_records(
 def aggregate(grouped: dict[tuple[str, int], list[dict]]) -> list[Point]:
     points = []
     for (algorithm, n), records in sorted(grouped.items()):
-        values = {field: np.array([r[field] for r in records]) for field, _, _ in COLUMNS}
+        values = {field: np.array([r[field] for r in records]) for field in FIELDS}
         points.append(Point(
             algorithm, n, len(records),
             mean={f: float(v.mean()) for f, v in values.items()},
@@ -83,48 +69,34 @@ def aggregate(grouped: dict[tuple[str, int], list[dict]]) -> list[Point]:
     return points
 
 
-def graph_lines(points: list[Point]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """Build time of each shared kNN graph vs N, labelled with k and the families using it."""
-    by_k: dict[int, dict[int, list[float]]] = defaultdict(lambda: defaultdict(list))
-    families: dict[int, set[str]] = defaultdict(set)
-    for p in points:
-        if p.family in GRAPH_K and p.mean["knn_s"] > 0:
-            by_k[GRAPH_K[p.family]][p.n].append(p.mean["knn_s"])
-            families[GRAPH_K[p.family]].add(p.family)
-    lines = {}
-    for k in sorted(by_k):
-        sizes = sorted(by_k[k])
-        label = f"kNN k={k} ({', '.join(sorted(families[k]))})"
-        lines[label] = (np.array(sizes, dtype=float),
-                        np.array([np.mean(by_k[k][n]) for n in sizes]))
-    return lines
+def min_max(values: np.ndarray) -> np.ndarray:
+    span = values.max() - values.min()
+    return (values - values.min()) / span if span > 0 else np.ones_like(values)
 
 
-def algorithm_order(points: list[Point]) -> list[str]:
-    """Fastest first at the largest N."""
-    largest = max(p.n for p in points)
-    at_largest = {p.algorithm: p.mean["fit_s"] for p in points if p.n == largest}
-    names = sorted({p.algorithm for p in points})
-    return sorted(names, key=lambda name: at_largest.get(name, np.inf))
+def combined_scores(points: list[Point]) -> dict[str, float]:
+    """`combined` per algorithm for points of one N (see module docstring)."""
+    scaled = [min_max(np.array([p.mean[field] for p in points])) for field in COMBINED_FROM]
+    return {p.algorithm: float(score) for p, score in zip(points, np.mean(scaled, axis=0))}
 
 
-def cell(point: Point | None, field: str, fmt: str) -> str:
-    if point is None:
-        return MISSING
-    mean, sd = point.mean[field], point.sd[field]
-    return f"{fmt.format(mean)} ± {fmt.format(sd)}" if point.n_seeds > 1 else fmt.format(mean)
+def with_sd(point: Point, field: str, fmt: str) -> str:
+    text = fmt.format(point.mean[field])
+    return f"{text} ± {fmt.format(point.sd[field])}" if point.n_seeds > 1 else text
 
 
-def markdown_table(points: list[Point]) -> str:
-    sizes = sorted({p.n for p in points})
-    by_key = {(p.algorithm, p.n): p for p in points}
-    header = ["algorithm", "N", *[title for _, title, _ in COLUMNS], "seeds"]
+def quality_table(points: list[Point]) -> str:
+    """One N: ranked by combined score; time and memory as side columns."""
+    combined = combined_scores(points)
+    header = ["algorithm", "combined", "local (trust.)", "global (pair ρ)", "triplet",
+              "fit s", "peak GB"]
     rows = [header, ["---"] * len(header)]
-    for name in algorithm_order(points):
-        for n in sizes:
-            point = by_key.get((name, n))
-            rows.append([name, f"{n:,}", *[cell(point, f, fmt) for f, _, fmt in COLUMNS],
-                         str(point.n_seeds) if point else "0"])
+    for p in sorted(points, key=lambda p: -combined[p.algorithm]):
+        rows.append([
+            p.algorithm, f"{combined[p.algorithm]:.2f}", with_sd(p, "local", "{:.4f}"),
+            with_sd(p, "global", "{:.3f}"), with_sd(p, "triplet_acc", "{:.3f}"),
+            f"{p.mean['fit_s']:.1f}", f"{p.mean['peak_rss_mb'] / MB_PER_GB:.1f}",
+        ])
     return "\n".join("| " + " | ".join(cells) + " |" for cells in rows)
 
 
@@ -136,28 +108,22 @@ def write_scaling_report(config: Config) -> Path:
     points = aggregate(joined_records(results_dir, specs, config.run.algorithms))
     if not points:
         raise ValueError(f"no scored runs for {specs} in {results_dir}")
-    names = algorithm_order(points)
     dataset = datasets.parse_spec(specs[0])[0]
-    charts = {
-        "time": figures / f"{dataset}-scaling-time.png",
-        "memory": figures / f"{dataset}-scaling-memory.png",
-        "quality": figures / f"{dataset}-scaling-quality.png",
-    }
-    plot_scaling_time(points, names, graph_lines(points), dataset, charts["time"])
-    plot_scaling_memory(points, names, dataset, charts["memory"])
-    plot_scaling_quality(points, names, dataset, charts["quality"])
+    chart = figures / f"{dataset}-quality-map.png"
+    plot_quality_map(points, dataset, chart)
 
     metrics = config.metrics
     sections = [
-        f"# Scaling with N — {dataset}\n",
+        f"# Projection quality vs N — {dataset}\n",
         (f"{config.run.n_threads} threads · seeds {list(config.run.seeds)} · mean ± sd over seeds. "
-        "kNN s = build time of the shared RINND graph (charged to every run that uses it); "
-        "layout s = fit s − kNN s. "
-        f"Local scores use {metrics.anchor_rows:,} anchor points above N = "
-        f"{metrics.anchors_above_n:,}, every point otherwise.\n"),
-        markdown_table(points) + "\n",
-        *[f"![{title}]({path.relative_to(results_dir)})\n" for title, path in charts.items()],
+         "**combined** = mean of local and global after min-max scaling each across the methods "
+         "at that N (relative: compare within one N only). "
+         f"Local scores use {metrics.anchor_rows:,} anchor points above N = "
+         f"{metrics.anchors_above_n:,}, every point otherwise.\n"),
+        f"![Projection quality]({chart.relative_to(results_dir)})\n",
     ]
+    for n in sorted({p.n for p in points}):
+        sections += [f"## N = {n:,}\n", quality_table([p for p in points if p.n == n]) + "\n"]
     report = results_dir / "SCALING.md"
     report.write_text("\n".join(sections))
     print(f"wrote {report}")

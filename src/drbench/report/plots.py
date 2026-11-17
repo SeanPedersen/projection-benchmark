@@ -193,15 +193,10 @@ def plot_curves(points: list[dict], dataset: str, path: Path) -> None:
     plt.close(fig)
 
 
-# Scaling charts: one line per algorithm across N, log N axis, coloured per algorithm (slot =
-# position in the sorted name list, so a colour follows its algorithm across charts).
-SCALING_LABEL_GAP = 0.045  # minimum vertical gap between end labels, axes fraction
-SCALING_LABEL_DX = 8
-SCALING_QUALITY_PANELS = (
-    ("local", "Local (mean trustworthiness)"),
-    ("global", "Global (random-pair ρ)"),
-    ("triplet_acc", "Triplet accuracy"),
-)
+# Projection quality map: local (trustworthiness) vs global (pair ρ), one panel per N, one point
+# per algorithm. Colour slot = position in the sorted name list, so a colour follows its algorithm.
+MAP_LABEL_GAP = 0.05  # minimum vertical gap between labels, axes fraction
+MAP_LABEL_DX = 7
 
 
 def algorithm_colors(names: list[str]) -> dict[str, str]:
@@ -222,114 +217,55 @@ def spread_positions(desired: list[float], gap: float) -> list[float]:
     return [y for group in groups for y in placed(group)]
 
 
-def end_labels(ax, ends: list[tuple[str, float, float]]) -> None:
-    """Name labels right of each line's last point, spread vertically so none overlap."""
+def spread_labels(ax, labelled: list[tuple[str, float, float]]) -> None:
+    """Labels right of their points, spread vertically so none overlap."""
     to_axes = ax.transAxes.inverted().transform
     placed = sorted(
-        ((name, x, y, to_axes(ax.transData.transform((x, y)))[1]) for name, x, y in ends),
+        ((name, x, y, to_axes(ax.transData.transform((x, y)))[1]) for name, x, y in labelled),
         key=lambda item: item[3],
     )
-    targets = spread_positions([item[3] for item in placed], SCALING_LABEL_GAP)
+    targets = spread_positions([item[3] for item in placed], MAP_LABEL_GAP)
     for (name, x, y, y_axes), target in zip(placed, targets):
         dy_points = (target - y_axes) * ax.bbox.height * 72 / ax.figure.dpi
-        ax.annotate(name, (x, y), textcoords="offset points", xytext=(SCALING_LABEL_DX, dy_points),
+        ax.annotate(name, (x, y), textcoords="offset points", xytext=(MAP_LABEL_DX, dy_points),
                     va="center", fontsize=8, color=TEXT_PRIMARY)
 
 
-def scaling_series(points, name: str, field: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    line = sorted((p for p in points if p.algorithm == name), key=lambda p: p.n)
-    return (np.array([p.n for p in line], dtype=float), np.array([p.mean[field] for p in line]),
-            np.array([p.sd[field] for p in line]))
-
-
-def draw_scaling_lines(ax, points, names, field: str, colors: dict[str, str]) -> list:
-    ends = []
-    for name in names:
-        xs, ys, sds = scaling_series(points, name, field)
-        if not len(xs):
-            continue
-        library = next(p.library for p in points if p.algorithm == name)
-        ax.errorbar(xs, ys, yerr=sds, fmt="none", ecolor=colors[name], elinewidth=1, alpha=0.6)
-        ax.plot(xs, ys, color=colors[name], linewidth=2, marker=LIBRARY_MARKERS.get(library, "o"),
-                markersize=7, markeredgecolor=SURFACE, markeredgewidth=1.5, zorder=3)
-        ends.append((name, xs[-1], ys[-1]))
-    return ends
-
-
-def finish_scaling_figure(fig, axes, points, names, colors, title: str, path: Path,
-                          extra_handles=()) -> None:
+def plot_quality_map(points, dataset: str, path: Path) -> None:
+    """Local vs global score per algorithm, one panel per N, mean ± sd over seeds.
+    Up and right is better on both axes."""
+    names = sorted({p.algorithm for p in points})
+    colors = algorithm_colors(names)
     sizes = sorted({p.n for p in points})
-    for ax in axes:
-        ax.set_xscale("log")
-        ax.set_xticks(sizes, [f"{n // 1000}k" for n in sizes])
-        ax.minorticks_off()
-        ax.set_xlabel("N (points, log)", color=TEXT_SECONDARY, fontsize=9)
-        ax.set_xlim(sizes[0] / 1.5, sizes[-1] * 4)  # room for end labels
-    handles = [plt.Line2D([], [], color=colors[name], linewidth=2,
-                          marker=LIBRARY_MARKERS.get(next(p.library for p in points
-                                                          if p.algorithm == name), "o"),
-                          label=name) for name in names]
-    handles += list(extra_handles)
-    fig.suptitle(title, color=TEXT_PRIMARY, fontsize=11)
+    fig, axes = plt.subplots(1, len(sizes), figsize=(5.8 * len(sizes), 5.2), facecolor=SURFACE,
+                             sharex=True, sharey=True)
+    for ax, n in zip(np.atleast_1d(axes), sizes):
+        style_axes(ax)
+        labelled = []
+        for p in (p for p in points if p.n == n):
+            x, y = p.mean["global"], p.mean["local"]
+            ax.errorbar(x, y, xerr=p.sd["global"], yerr=p.sd["local"], fmt="none",
+                        ecolor=colors[p.algorithm], elinewidth=1, alpha=0.6, zorder=2)
+            ax.scatter(x, y, s=MARKER_SIZE, color=colors[p.algorithm],
+                       marker=LIBRARY_MARKERS.get(p.library, "o"), edgecolors=SURFACE,
+                       linewidths=2, zorder=3)
+            labelled.append((p.algorithm, x, y))
+        ax.set_title(f"N = {n:,}", color=TEXT_PRIMARY, fontsize=10)
+        ax.set_xlabel("Global: random-pair Spearman ρ  →", color=TEXT_SECONDARY, fontsize=9)
+        ax.autoscale_view()
+        spread_labels(ax, labelled)
+    np.atleast_1d(axes)[0].set_ylabel("Local: mean trustworthiness  →", color=TEXT_SECONDARY,
+                                      fontsize=9)
+    right = max(p.mean["global"] for p in points)
+    for ax in np.atleast_1d(axes):
+        ax.set_xlim(right=right + 0.09)  # room for labels right of the points
+    handles = [plt.Line2D([], [], color=TEXT_SECONDARY, marker=LIBRARY_MARKERS.get(lib, "o"),
+                          linestyle="", label=lib)
+               for lib in sorted({p.library for p in points})]
+    fig.suptitle(f"Projection quality — {dataset} (mean ± sd over seeds; up and right is better)",
+                 color=TEXT_PRIMARY, fontsize=11)
     fig.tight_layout()
-    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.0),
-               ncol=min(len(handles), 5), frameon=False, fontsize=8, labelcolor=TEXT_SECONDARY)
+    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=len(handles),
+               frameon=False, fontsize=8, labelcolor=TEXT_SECONDARY)
     fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor=SURFACE)
     plt.close(fig)
-
-
-KNN_LINESTYLES = ((0, (5, 2)), (0, (2, 2)), (0, (8, 2, 2, 2)))
-
-
-def plot_scaling_time(points, names: list[str], graphs: dict[str, tuple[np.ndarray, np.ndarray]],
-                      dataset: str, path: Path) -> None:
-    """Fit time per algorithm (solid) and build time of each shared kNN graph (grey, dashed)
-    vs N, log-log. `graphs` maps a label to (N, seconds)."""
-    colors = algorithm_colors(names)
-    fig, ax = plt.subplots(figsize=(9, 5.5), facecolor=SURFACE)
-    style_axes(ax)
-    ax.set_yscale("log")
-    ends = draw_scaling_lines(ax, points, names, "fit_s", colors)
-    for (label, (xs, seconds)), style in zip(graphs.items(), KNN_LINESTYLES):
-        ax.plot(xs, seconds, color=TEXT_SECONDARY, linewidth=1.2, linestyle=style, zorder=2)
-        ends.append((label, xs[-1], seconds[-1]))
-    sizes = np.array(sorted({p.n for p in points}), dtype=float)
-    smallest_fit = min(p.mean["fit_s"] for p in points if p.n == sizes[0])
-    ax.plot(sizes, smallest_fit * sizes / sizes[0], color=FRONTIER, linewidth=1, linestyle=":",
-            zorder=1)
-    ax.set_ylabel("Seconds (log)", color=TEXT_SECONDARY, fontsize=9)
-    ax.autoscale_view()
-    end_labels(ax, ends)
-    extra = (plt.Line2D([], [], color=TEXT_SECONDARY, linewidth=2, label="fit (kNN included)"),
-             plt.Line2D([], [], color=TEXT_SECONDARY, linewidth=1.2, linestyle="--",
-                        label="shared kNN graph build (grey)"),
-             plt.Line2D([], [], color=FRONTIER, linewidth=1, linestyle=":", label="∝ N"))
-    finish_scaling_figure(fig, [ax], points, names, colors,
-                          f"Wall time vs N — {dataset} (mean over seeds)", path, extra)
-
-
-def plot_scaling_memory(points, names: list[str], dataset: str, path: Path) -> None:
-    colors = algorithm_colors(names)
-    fig, ax = plt.subplots(figsize=(9, 5.5), facecolor=SURFACE)
-    style_axes(ax)
-    ax.set_yscale("log")
-    ends = draw_scaling_lines(ax, points, names, "peak_rss_mb", colors)
-    ax.set_ylabel("Peak RSS (MB, log; includes interpreter and data)", color=TEXT_SECONDARY,
-                  fontsize=9)
-    ax.autoscale_view()
-    end_labels(ax, ends)
-    finish_scaling_figure(fig, [ax], points, names, colors,
-                          f"Peak memory vs N — {dataset} (mean over seeds)", path)
-
-
-def plot_scaling_quality(points, names: list[str], dataset: str, path: Path) -> None:
-    colors = algorithm_colors(names)
-    fig, axes = plt.subplots(1, len(SCALING_QUALITY_PANELS), figsize=(17, 5.5), facecolor=SURFACE)
-    for ax, (field, label) in zip(axes, SCALING_QUALITY_PANELS):
-        style_axes(ax)
-        ends = draw_scaling_lines(ax, points, names, field, colors)
-        ax.set_ylabel(label, color=TEXT_SECONDARY, fontsize=9)
-        ax.autoscale_view()
-        end_labels(ax, ends)
-    finish_scaling_figure(fig, axes, points, names, colors,
-                          f"Quality vs N — {dataset} (mean ± sd over seeds)", path)

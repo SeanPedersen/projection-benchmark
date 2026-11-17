@@ -1,4 +1,4 @@
-"""Scaling report: aggregation over seeds, layout time, table and charts from synthetic records."""
+"""Scaling report: seed aggregation, the relative combined score, ranked tables and the map."""
 
 import itertools
 from dataclasses import replace
@@ -13,38 +13,42 @@ from drbench.report.scaling import write_scaling_report
 from drbench.runner.records import append_jsonl, metrics_path, runs_path
 
 SIZES = (1000, 10000)
-ALGORITHMS = {"pca": None, "mrs-umap-rinnd-fast": 0.5}
+# local, global per algorithm: pca has the best global, umap the best local.
+SCORES = {"pca": (0.6, 0.30), "mrs-umap-rinnd-default": (0.9, 0.10),
+          "ncvis-rinnd-default": (0.8, 0.20)}
 
 
 def write_records(results_dir: Path) -> None:
     for n in SIZES:
-        for algorithm, knn_s in ALGORITHMS.items():
+        for algorithm, (local, global_rho) in SCORES.items():
             for seed in (0, 1):
                 key = {"dataset": f"dbpedia-512-100k@{n}", "algorithm": algorithm, "seed": seed,
                        "budget": 1.0}
-                fit_s = n / 1000 + seed
                 append_jsonl(runs_path(results_dir), key | {
-                    "status": "ok", "fit_s": fit_s, "knn_s": knn_s and knn_s * n / 1000,
-                    "peak_rss_mb": 100.0 + n / 100, "n": n, "epochs": None,
+                    "status": "ok", "fit_s": n / 1000 + seed, "knn_s": None,
+                    "peak_rss_mb": 1024.0, "n": n, "epochs": None,
                 })
                 append_jsonl(metrics_path(results_dir), key | {
-                    "metrics_version": METRICS_VERSION, "epochs": None, "local": 0.9,
-                    "global": 0.3, "triplet_acc": 0.6 + seed / 100,
+                    "metrics_version": METRICS_VERSION, "epochs": None, "local": local,
+                    "global": global_rho + seed / 100, "triplet_acc": 0.6,
                 })
 
 
-def test_scaling_report(tmp_path):
+def test_scaling_report_ranks_by_combined_score(tmp_path):
     write_records(tmp_path)
     config = load_config(Path("benchmark.toml")).with_run(
-        datasets=tuple(f"dbpedia-512-100k@{n}" for n in SIZES), algorithms=tuple(ALGORITHMS),
+        datasets=tuple(f"dbpedia-512-100k@{n}" for n in SIZES), algorithms=tuple(SCORES),
         results_dir=tmp_path)
     config = replace(config, run=replace(config.run, seeds=(0, 1)))
     report = write_scaling_report(config).read_text()
-    # seeds 0 and 1 at N=10k: fit 10 and 11 s, kNN 5 s -> layout 5.5 ± 0.7
-    assert "| mrs-umap-rinnd-fast | 10,000 | 10.5 ± 0.7 | 5.0 ± 0.0 | 5.5 ± 0.7 |" in report
-    assert "| pca | 1,000 | 1.5 ± 0.7 | 0.0 ± 0.0 | 1.5 ± 0.7 |" in report
-    for chart in ("time", "memory", "quality"):
-        assert (tmp_path / "figures" / f"dbpedia-512-100k-scaling-{chart}.png").stat().st_size
+    # ncvis: local (0.8 - 0.6) / 0.3 = 2/3, global (0.205 - 0.105) / 0.2 = 1/2 -> 0.58, ranked
+    # above pca and mrs-umap (each best on one scale, worst on the other: 0.50).
+    row = "| ncvis-rinnd-default | 0.58 | 0.8000 ± 0.0000 | 0.205 ± 0.007 | 0.600 ± 0.000 | 10.5 | 1.0 |"
+    assert row in report
+    table = report[report.index("## N = 10,000"):]
+    assert table.index("ncvis-rinnd-default") < table.index("| pca |")
+    assert report.count("## N = ") == len(SIZES)
+    assert (tmp_path / "figures" / "dbpedia-512-100k-quality-map.png").stat().st_size
 
 
 def test_spread_positions_keeps_gap_and_centres_groups():

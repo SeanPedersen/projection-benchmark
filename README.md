@@ -15,135 +15,64 @@ uv run pytest
 uv run drbench all          # prep → run → evaluate → report (full config: 100k × 8 algos × 3 seeds)
 uv run drbench all --subsample 10000 --seeds 0 --results-dir results-smoke   # ~5 min smoke run
 uv run drbench curves       # quality vs time: every algorithm over a grid of epoch budgets
+uv run drbench scaling --datasets jinaclip-512-1m@10000,jinaclip-512-1m@100000 --algos ...  # SCALING.md
 ```
 
 Results go to `results/`: `runs.jsonl`, `metrics.jsonl`, `summary.csv`, `REPORT.md` and `figures/`.
 The steps resume where they left off: finished runs and evaluations are skipped. Pass `--retry-failed` to rerun failures and timeouts.
 
-## Results (dbpedia-512-100k)
+## Results: projection quality vs N
 
-### Library defaults (8 threads, i7-8550U)
+Seven methods, each with its best kNN setup (a shared [RINND](https://pypi.org/project/rinnd/)
+graph, default parameters), on `jinaclip-512-1m` subsampled to N = 10k, 100k and 512k.
+3 seeds, 36 threads (i9-7980XE). Tables per N: [`results/scaling/SCALING.md`](results/scaling/SCALING.md).
 
-Full tables: [`results/REPORT.md`](results/REPORT.md) (library defaults, 3 seeds) and
-[`results/curves/CURVES.md`](results/curves/CURVES.md) (quality vs time across epoch budgets).
-Both still show the old k-means global score until they are re-evaluated (`drbench evaluate` and `drbench curves` rescore them).
-The global and triplet columns below are computed on the same embeddings with the new measures.
+![Projection quality: local vs global per N](results/scaling/figures/jinaclip-512-1m-quality-map.png)
 
-| algorithm | fit time | peak memory | local (trustworthiness) | global (pair ρ) | triplet |
+| method | combined 10k / 100k / 512k | local @512k | global @512k | fit @512k | peak @512k |
 |---|---|---|---|---|---|
-| mrs-tsne-bh | 172 s | 1.0 GB | 0.986 | 0.269 | 0.596 |
-| mrs-tsne-fft | 84 s | 1.0 GB | 0.986 | 0.272 | 0.597 |
-| opentsne-fft | 141 s | 1.3 GB | 0.985 | 0.289 | 0.602 |
-| ncvis-ef64 | 31 s | 0.5 GB | 0.961 | 0.207 | 0.576 |
-| ncvis | 27 s | 0.5 GB | 0.954 | 0.213 | 0.577 |
-| umap-learn | 61 s* | 1.0 GB | 0.936 | 0.274 | 0.596 |
-| mrs-umap | 18 s | 0.8 GB | 0.907 | 0.259 | 0.591 |
-| pca | 0.3 s | 0.5 GB | 0.724 | 0.345 | 0.629 |
+| mrs-tsne-fft | 0.78 / **0.91** / **0.86** | 0.968 | 0.188 | 73 s | 5.6 GB |
+| opentsne-fft | 0.78 / 0.87 / 0.80 | **0.971** | 0.168 | 242 s | 4.2 GB |
+| umap-learn | 0.48 / 0.49 / 0.51 | 0.889 | 0.114 | 43 s | 2.3 GB |
+| pca | 0.50 / 0.50 / 0.50 | 0.644 | **0.234** | 1.4 s | 1.7 GB |
+| ncvis | 0.57 / 0.52 / 0.43 | 0.928 | 0.067 | 23 s | 1.8 GB |
+| mrs-umap | 0.40 / 0.42 / 0.40 | 0.855 | 0.093 | 18 s | 1.8 GB |
+| mrs-pacmap | 0.31 / 0.30 / 0.38 | 0.844 | 0.092 | 120 s | 8.6 GB |
 
-\* Includes about 40 s of numba JIT from a too-short warm-up; about 23 s without it ([#1](../../issues/1)).
+**local** = mean trustworthiness (k = 5, 15, 30); **global** = Spearman ρ of 1M random pairs.
+**combined** = mean of local and global, each min-max scaled across these seven methods at that N
+(1 = best on both). It is relative: it ranks methods within one N, not across N. Seed sd ≤ 0.004
+local, ≤ 0.027 global.
 
-- t-SNE reaches its quality plateau at about half its default epochs: mrs-tsne-fft at ×½ gives 0.985 in 64 s.
-- NCVis is the best choice under 30 s. Its stock HNSW search reaches only 0.85 recall@15. With query
-  ef=64 (patched), recall is 0.94 and the local score rises by 0.0065 for 4 s more. A near-exact graph
-  does not help beyond that.
-- The UMAP implementations stop improving at 0.91–0.94 local score.
-- PCA keeps global distances best (pair ρ 0.345) but has by far the worst local structure. Among the
-  nonlinear methods openTSNE scores highest globally; NCVis lowest.
-
-### kNN backend: shared RINND graph (36 threads, i9-7980XE)
-
-Every library that accepts a precomputed kNN graph also runs as a `-rinnd-fast` variant on a
-shared [RINND](https://pypi.org/project/rinnd/) graph (see [Measurement protocol](#measurement-protocol)).
-3 seeds, local ± seed sd. Times are not comparable to the 8-thread table above.
-
-| algorithm | kNN graph | fit time | peak memory | local | global (pair ρ) | triplet |
-|---|---|---|---|---|---|---|
-| ncvis | HNSW (stock) | 7.0 s | 540 MB | 0.9548 ± 0.0012 | 0.226 | 0.582 |
-| **ncvis-rinnd-fast** | RINND k=15 | **3.9 s** | **426 MB** | **0.9621** ± 0.0006 | 0.229 | 0.582 |
-| mrs-umap | NN-Descent | 4.8 s | 1029 MB | 0.9060 ± 0.0018 | 0.241 | 0.585 |
-| **mrs-umap-rinnd-fast** | RINND k=15 | **3.1 s** | **399 MB** | **0.9096** ± 0.0002 | **0.263** | **0.592** |
-| umap-learn | PyNNDescent | 7.0 s | 992 MB | 0.9357 ± 0.0007 | 0.273 | 0.595 |
-| **umap-learn-rinnd-fast** | RINND k=15 | 7.0 s | **852 MB** | **0.9375** ± 0.0008 | 0.277 | 0.596 |
-| mrs-tsne-fft | IVF | 26.5 s | 1170 MB | **0.9855** ± 0.0001 | 0.271 | 0.597 |
-| mrs-tsne-fft-rinnd-fast | RINND k=90 (fast) | **14.8 s** | 1210 MB | 0.9842 ± 0.0000 | 0.276 | 0.598 |
-| opentsne-fft | Annoy | 98.5 s | 1437 MB | **0.9851** ± 0.0001 | **0.292** | **0.603** |
-| opentsne-fft-rinnd-fast | RINND k=90 (fast) | **79.4 s** | **1040 MB** | 0.9839 ± 0.0001 | 0.280 | 0.599 |
-| mrs-pacmap | IVF | 37.4 s | 2095 MB | **0.9135** ± 0.0014 | **0.262** | **0.593** |
-| mrs-pacmap-rinnd-fast | RINND k=60 (fast) | **22.4 s** | 2178 MB | 0.9052 ± 0.0004 | 0.251 | 0.591 |
-
-- **NCVis and both UMAPs: use RINND.** As fast or faster, less memory, and a better local score.
-  NCVis gains most (+0.007, 1.8× faster) because its stock HNSW graph is the least accurate.
-- **t-SNE: a speed trade.** 1.25–1.8× faster for about −0.0013 local; openTSNE also loses some global
-  structure. A more accurate graph did not help t-SNE either (see [#1](../../issues/1)).
-- **PaCMAP: keep IVF.** The fast schedule's k=60 graph (recall 0.936) costs 0.008 local and 0.011
-  global. RINND's default schedule at k=60 (recall 0.991, +1.5 s) is untested.
-- More kNN detail in [#1](../../issues/1): isolated backend timings and recall, manifolds-rs's own
-  NN-Descent (slow, about 3.4 GB at 36 threads), and why PCA + NN-Descent + rerank does not pay off at 512-d.
-
-## Scaling with N (shared RINND graph, 36 threads, i9-7980XE)
-
-The best kNN setup of every algorithm (a shared [RINND](https://pypi.org/project/rinnd/) graph,
-RINND's default parameters) on one corpus at N = 10k, 100k and 512k: `jinaclip-512-1m`, 3 seeds each.
-Full table: [`results/scaling/SCALING.md`](results/scaling/SCALING.md) (`drbench scaling`).
-
-| algorithm | N | fit time | of which kNN | peak memory | local | global (pair ρ) | triplet |
-|---|---|---|---|---|---|---|---|
-| pca | 10k / 100k / 512k | 0.1 / 0.4 / 1.4 s | – | 0.2 / 0.5 / 1.7 GB | 0.644 / 0.644 / 0.644 | 0.278 / 0.243 / 0.234 | 0.601 / 0.597 / 0.595 |
-| mrs-umap-rinnd-default | 10k / 100k / 512k | 0.5 / 3.3 / 18.0 s | 0.1 / 0.7 / 4.7 s | 0.1 / 0.4 / 1.8 GB | 0.816 / 0.853 / 0.855 | 0.115 / 0.113 / 0.093 | 0.550 / 0.549 / 0.544 |
-| ncvis-rinnd-default | 10k / 100k / 512k | 0.5 / 4.4 / 22.7 s | 0.1 / 0.7 / 4.7 s | 0.2 / 0.4 / 1.9 GB | 0.897 / 0.922 / 0.928 | 0.126 / 0.109 / 0.067 | 0.552 / 0.546 / 0.531 |
-| umap-learn-rinnd-default | 10k / 100k / 512k | 1.8 / 7.3 / 43.3 s | 0.1 / 0.7 / 4.7 s | 0.6 / 0.9 / 2.3 GB | 0.852 / 0.882 / 0.889 | 0.122 / 0.121 / 0.114 | 0.554 / 0.551 / 0.549 |
-| mrs-tsne-fft-rinnd-default | 10k / 100k / 512k | 2.4 / 15.4 / 73.2 s | 0.5 / 5.2 / 30.2 s | 0.6 / 1.6 / 5.7 GB | 0.912 / 0.957 / 0.968 | 0.192 / 0.214 / 0.188 | 0.570 / 0.578 / 0.569 |
-| mrs-pacmap-rinnd-default | 10k / 100k / 512k | 3.5 / 24.6 / 120.0 s | 0.4 / 3.5 / 20.4 s | 0.6 / 2.3 / 8.8 GB | 0.812 / 0.833 / 0.844 | 0.087 / 0.086 / 0.092 | 0.549 / 0.547 / 0.545 |
-| opentsne-fft-rinnd-default | 10k / 100k / 512k | 35.0 / 82.9 / 241.8 s | 0.5 / 5.2 / 30.2 s | 0.7 / 1.6 / 4.3 GB | 0.907 / 0.958 / 0.971 | 0.198 / 0.202 / 0.168 | 0.568 / 0.574 / 0.564 |
-
-Means over 3 seeds; seed sd (in `SCALING.md`) is ≤ 0.004 for local, but up to 0.027 for global.
-
-![Wall time vs N](results/scaling/figures/jinaclip-512-1m-scaling-time.png)
-![Peak memory vs N](results/scaling/figures/jinaclip-512-1m-scaling-memory.png)
-![Quality vs N](results/scaling/figures/jinaclip-512-1m-scaling-quality.png)
-
-- **Fit time grows roughly linearly with N** (×5.1 in N from 100k to 512k gives ×4.7–5.9) for every
-  nonlinear method except openTSNE. openTSNE costs 35 s already at 10k (583 CPU s) and only ×2.9 from 100k
-  to 512k: most of its work is a per-iteration cost that barely depends on N. The likely cause is
-  the FFT interpolation grid, whose size follows the embedding's extent, not N. manifolds-rs t-SNE
-  is 3.3× faster at 512k with the same local score (0.968 vs 0.971) and higher global ρ.
-- **The kNN graph is a large share of t-SNE and PaCMAP time:** the k=90 graph takes 30 s of
-  mrs-tsne-fft's 73 s at 512k, the k=60 graph 20 s of PaCMAP's 120 s. The k=15 graph (NCVis,
-  UMAP) takes 4.7 s.
-- **Memory:** PaCMAP needs 8.8 GB at 512k, manifolds-rs t-SNE 5.7 GB, openTSNE 4.3 GB. NCVis and
-  both UMAPs stay below 2.3 GB, close to PCA (1.7 GB, mostly the 1 GB data matrix).
-- **Ranking is stable across N.** Local: t-SNE > NCVis > umap-learn > mrs-umap > PaCMAP > PCA at
-  every size. Global: PCA > t-SNE > the rest. NCVis loses the most global structure as N grows
-  (ρ 0.126 → 0.067).
-- This corpus is much harder than dbpedia: at 100k the local scores are 0.03–0.08 lower and the
-  nonlinear methods' global ρ is 0.09–0.21 (dbpedia: 0.23–0.28).
+- **t-SNE is the only family good at both** local and global structure, at every N.
+  manifolds-rs t-SNE matches openTSNE's local score, keeps more global structure, and is 3–15× faster.
+- **NCVis is second-best locally but loses global structure as N grows** (ρ 0.126 → 0.067), falling
+  below PCA in combined score at 512k.
+- **The UMAPs and PaCMAP are worse than t-SNE on both axes** at every N. PCA is the other extreme:
+  best global, far worst local.
 
 Caveats:
-- **Different k per method:** each method gets a graph at its own k (15 for UMAP and NCVis, 60 for
-  PaCMAP's `n_near + 50`, 90 = 3 × perplexity for t-SNE), so "kNN time" differs by design. The
-  graph is built once per (N, k) and shared across seeds and methods; every run that uses it is
-  charged its build time and extra memory, as in the table above.
-- **Default vs fast RINND schedule:** this run uses RINND's default parameters. The `-rinnd-fast`
-  schedules in the 100k table were tuned at 100k, and on this corpus their recall drops with N:
-  at 512k recall@k is 0.866 (k=15, same as default), 0.872 (k=60) and 0.816 (k=90), against 0.982
-  and 0.985 with the default schedule, which takes 20 s and 30 s instead of 9 and 10 s.
-- **Local scores across N:** trustworthiness is normalised by N, so one embedding's score is not
-  directly comparable across sizes; compare methods within one N. At 512k local scores are
-  estimated on 10,000 fixed anchor points (ranks stay exact over all N); at 10k and 100k every point
-  is scored. Global and triplet use 1M sampled pairs / triplets at every N.
-- **Subsamples:** fixed random draws from the 999,500 rows. `@100000` ⊂ `@512000` (numpy draws a
-  permutation prefix for large samples), but `@10000` is an independent draw.
-- **t-SNE learning rate:** both libraries run the same 750-iteration schedule, but openTSNE's
-  learning rate is N / exaggeration per phase, manifolds-rs uses max(N/12, 200) throughout.
-- **Dataset provenance:** `jinaclip-512-1m` is a 999,500 × 512 float32, L2-normalised file on the
-  benchmark host, most likely jina-clip-v2 caption embeddings. Its exact provenance is not
-  confirmed, and the file is not downloadable from this repo (`DRBENCH_JINACLIP_1M` sets the path).
+- kNN graphs differ by method: k = 15 (UMAP, NCVis), 60 (PaCMAP), 90 (t-SNE). The graph's build
+  time and memory are charged to every run that uses it.
+- Trustworthiness depends on N, so compare methods within one N. At 512k it is estimated on 10k
+  fixed anchor points (ranks exact over all N); at 10k and 100k every point is scored.
+- `@100000` ⊂ `@512000`, but `@10000` is an independent draw.
+- openTSNE's learning rate is N / exaggeration per phase, manifolds-rs uses max(N/12, 200); both run
+  750 iterations.
+- `jinaclip-512-1m` (999,500 × 512, L2-normalised) is a local file on the benchmark host, most likely
+  jina-clip-v2 caption embeddings; its exact provenance is unconfirmed (`DRBENCH_JINACLIP_1M` sets the path).
 
-## Dataset (milestone 1)
+Earlier results on `dbpedia-512-100k` (library defaults, epoch-budget curves, kNN backends):
+[`results/REPORT.md`](results/REPORT.md), [`results/curves/CURVES.md`](results/curves/CURVES.md)
+and [#1](../../issues/1).
 
-`dbpedia-512-100k` is 100k DBpedia entities embedded with OpenAI `text-embedding-3-small` (512-d).
-It comes from [Qdrant on the HF Hub](https://huggingface.co/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-small-512-100K)
-and is L2-normalised. `name@N` selects a fixed random subsample.
+## Datasets
+
+- `jinaclip-512-1m`: see the caveats above.
+- `dbpedia-512-100k`: 100k DBpedia entities embedded with OpenAI `text-embedding-3-small` (512-d),
+  from [Qdrant on the HF Hub](https://huggingface.co/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-small-512-100K), L2-normalised.
+
+`name@N` selects a fixed random subsample.
 
 ## Algorithms
 
@@ -159,7 +88,7 @@ and is L2-normalised. `name@N` selects a fixed random subsample.
 | `ncvis-hq`: HNSW M=16, efC=200, ef=64 (recall@15 ≈0.99) | ncvis (patched) | C++ |
 | `mrs-pacmap` | manifolds-rs | Rust |
 | kNN-backend variants: `umap-learn-rinnd`, `opentsne-fft-nndescent`/`-exact`, `mrs-tsne-fft-nndescent`/`-hnsw` | as above | |
-| `-rinnd-fast` variants of `opentsne-fft`, `mrs-tsne-fft`, `umap-learn`, `mrs-umap`, `mrs-pacmap`, `ncvis` (shared RINND graph; NCVis via a patch) | as above + RINND (Rust) | |
+| `-rinnd-default` / `-rinnd-fast` variants of `opentsne-fft`, `mrs-tsne-fft`, `umap-learn`, `mrs-umap`, `mrs-pacmap`, `ncvis` (shared RINND graph, default or tuned-fast schedule; NCVis via a patch) | as above + RINND (Rust) | |
 
 Shared hyperparameters are aligned across implementations: perplexity 30, n_neighbors 15 and min_dist 0.1. Everything else stays at library defaults.
 
@@ -179,15 +108,14 @@ Shared hyperparameters are aligned across implementations: perplexity 30, n_neig
 - **Isolation:** every (dataset, algorithm, seed) runs in a fresh worker process. The worker gets the same thread count through `OMP/OPENBLAS/MKL/NUMBA/RAYON_NUM_THREADS` and the same CPU affinity.
 - **Warm-up:** an untimed warm-up on 5,000 rows runs first, so numba JIT compilation is not measured. It must exceed 4,096 rows: below that umap-learn uses exact distances and never compiles its PyNNDescent path.
 - **Time:** wall clock of `fit_transform` only. kNN search is included; data loading is not. CPU time (user + system over all threads) is recorded too, since libraries use the cores to different degrees.
-- **Shared kNN graphs:** the `-rinnd-fast` variants build one RINND graph per (dataset, k) and reuse it across algorithms and seeds. A run that loads a stored graph is charged its build time (added to fit time, also recorded as `shared_knn_s`) and its extra peak memory, so it reports the same cost as building it. CPU time of the build is not charged.
+- **Shared kNN graphs:** the `-rinnd-default` / `-rinnd-fast` variants build one RINND graph per (dataset, k) and reuse it across algorithms and seeds. A run that loads a stored graph is charged its build time (added to fit time, also recorded as `shared_knn_s`) and its extra peak memory, so it reports the same cost as building it. CPU time of the build is not charged.
 - **Peak memory:** the kernel's VmHWM, reset after warm-up. The worker measures it, not wait4, because `ru_maxrss` inherits the parent's RSS across fork. Values include the interpreter, the data and loaded libraries; `delta_rss_mb` subtracts the pre-fit RSS.
 - **Laptop throttling:** the run order is shuffled with a fixed seed, and `cooldown_s` adds a pause between runs. Time is the median over seeds.
-- **Evaluation** runs as a separate step, using exact ranks at full N: chunked BLAS distances plus a numba counting kernel, with no N×N matrix. Scores carry a metrics version; when a definition changes, `drbench evaluate` rescores the stored embeddings.
+- **Evaluation** runs as a separate step, using exact ranks (above 100k points: on 10k fixed anchor points): chunked BLAS distances plus a numba counting kernel, with no N×N matrix. Scores carry a metrics version; when a definition changes, `drbench evaluate` rescores the stored embeddings.
 
 ## TODO
 
 - Datasets: FMNIST, image and audio embedding sets.
 - Higher target dimensions (32, 128), scored by recall.
 - Re-evaluate `results/` and `results/curves/` with the new global measures.
-- PaCMAP with RINND's default schedule at k=60.
 - Algorithms: umap-rs (a Rust CLI is needed, since it has no Python bindings), fast-umap (GPU), TriMap, VAE, SOM, (F)LAS, SAUCIE, SQuaD-MDS, IsoMap, DiRe-JAX.
