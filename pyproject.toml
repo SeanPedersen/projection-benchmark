@@ -16,6 +16,7 @@ dependencies = [
     "opentsne>=1.0.2",
     "manifolds-rs>=0.6.1",
     "ncvis>=1.5.13",
+    "rinnd>=0.3.1",
 ]
 
 [project.scripts]

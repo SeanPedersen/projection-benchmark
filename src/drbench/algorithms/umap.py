@@ -1,10 +1,12 @@
 """UMAP adapters (umap-learn reference, manifolds-rs) plus manifolds-rs PaCMAP.
 
 Default epochs:
-- umap-learn: 200 for N > 10k, 500 below, in both pipelines.
+- umap-learn: 200 for N > 10k, 500 below, in both pipelines. The kNN backend is pinned per variant.
 - manifolds-rs UMAP: 500 with the Adam optimiser.
 - manifolds-rs PaCMAP: 450.
 """
+
+from functools import partial
 
 import numpy as np
 
@@ -17,7 +19,9 @@ MANIFOLDS_UMAP_EPOCHS = 500
 MANIFOLDS_PACMAP_EPOCHS = 450
 
 
-def _umap_learn(X: np.ndarray, seed: int, n_threads: int, budget: float, legacy: bool) -> np.ndarray:
+def _umap_learn(
+    X: np.ndarray, seed: int, n_threads: int, budget: float, *, legacy: bool, nn_backend: str
+) -> np.ndarray:
     import umap
 
     default_epochs = UMAP_LEARN_EPOCHS_SMALL if len(X) <= UMAP_LEARN_SMALL_N else UMAP_LEARN_EPOCHS_LARGE
@@ -31,18 +35,17 @@ def _umap_learn(X: np.ndarray, seed: int, n_threads: int, budget: float, legacy:
         n_jobs=n_threads,
         random_state=None,
         compatibility_layout=legacy,
+        nearest_neighbor_backend=nn_backend,
     )
     return model.fit_transform(X)
 
 
-def umap_learn(X: np.ndarray, seed: int, n_threads: int, budget: float) -> np.ndarray:
-    """umap-learn >= 0.6 pipeline: recursive initialization + Adam layout."""
-    return _umap_learn(X, seed, n_threads, budget, legacy=False)
-
-
-def umap_learn_legacy(X: np.ndarray, seed: int, n_threads: int, budget: float) -> np.ndarray:
-    """umap-learn 0.5.x pipeline: spectral initialization + SGD layout."""
-    return _umap_learn(X, seed, n_threads, budget, legacy=True)
+# umap-learn >= 0.6 prefers RINND when installed and silently falls back to PyNNDescent otherwise.
+# Pinning the backend keeps every variant reproducible across environments.
+umap_learn = partial(_umap_learn, legacy=False, nn_backend="pynndescent")
+umap_learn_rinnd = partial(_umap_learn, legacy=False, nn_backend="rinnd")
+# umap-learn 0.5.x pipeline: spectral initialization + SGD layout (always PyNNDescent).
+umap_learn_legacy = partial(_umap_learn, legacy=True, nn_backend="auto")
 
 
 def manifolds_umap(X: np.ndarray, seed: int, n_threads: int, budget: float) -> np.ndarray:

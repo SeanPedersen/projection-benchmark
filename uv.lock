@@ -114,6 +114,7 @@ dependencies = [
     { name = "numpy" },
     { name = "opentsne" },
     { name = "pyarrow" },
+    { name = "rinnd" },
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "umap-learn" },
@@ -135,6 +136,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.0" },
     { name = "opentsne", specifier = ">=1.0.2" },
     { name = "pyarrow", specifier = ">=17" },
+    { name = "rinnd", specifier = ">=0.3.1" },
     { name = "scikit-learn", specifier = ">=1.5" },
     { name = "scipy", specifier = ">=1.13" },
     { name = "umap-learn", specifier = ">=0.5.7" },
@@ -532,6 +534,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b4/66/5df8eb3e6593dbc3dacd0ce54eccf64f258298c8671e922ab25a5b07a6a2/qh3-2.1.0-cp37-abi3-win32.whl", hash = "sha256:19d1b93d669177215675bd21a303763d2222bc9ba1c9c3850e1e9a5bdfe868aa", size = 2033904, upload-time = "2026-10-25T18:32:43.69Z" },
     { url = "https://files.pythonhosted.org/packages/a8/19/8e4e9ac60b5e3f83a4f702b0094533de8c86d8d6baa77cb3ba6f7ef4d8a9/qh3-2.1.0-cp37-abi3-win_amd64.whl", hash = "sha256:85be2ef6a536a687d12c018f4605a5517b151d02ea7d42a3d9f4386985c735a5", size = 2299731, upload-time = "2026-10-25T18:32:45.316Z" },
     { url = "https://files.pythonhosted.org/packages/71/d2/922f63131bf1f72848198d0ded9dde9dbd7245a59c14c18dda07ba4d153f/qh3-2.1.0-cp37-abi3-win_arm64.whl", hash = "sha256:0c257cef34cf990da943ffbf12c4ee2ab44d131f4b4024383edae84d19428056", size = 2117482, upload-time = "2026-10-25T18:32:47.004Z" },
+]
+
+[[package]]
+name = "rinnd"
+version = "0.4.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c9/d8/beeddf682493d1e6a41ae4657aaa4fd41a6ca3df26a0779a6a47cc85cc04/rinnd-0.4.4.tar.gz", hash = "sha256:f1b29dfc99ca26532f4a8d76ed2fdcf73c0900ae62bf792cd6a6c5c7fde962e3", size = 121968, upload-time = "2026-10-16T20:26:46.41Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/44/11/c54805a2098577afe757fc052dea6e9e1004f8aedbc62263a734ef53685e/rinnd-0.4.4-cp312-cp312-manylinux_2_34_x86_64.whl", hash = "sha256:566514f4ad9f787f15a854aff111ee90d3e2fcd41a198881eedbbc74a9361bc2", size = 1183405, upload-time = "2026-10-16T20:26:33.498Z" },
+    { url = "https://files.pythonhosted.org/packages/67/0c/7747ce94fc73e90343395ac5edcc14c8547ab4e812c6bc51b60a411f2c39/rinnd-0.4.4-cp312-cp312-win_amd64.whl", hash = "sha256:2c99b377ad99de009ab1f121fd443dcc3af411a69ee3df5011d812a83bde658b", size = 1016420, upload-time = "2026-10-16T20:26:41.981Z" },
 ]
 
 [[package]]

@@ -11,9 +11,10 @@ from pathlib import Path
 
 import numpy as np
 
-from drbench.datasets import dbpedia
+from drbench.datasets import dbpedia, derived
 
 SUBSAMPLE_SEED = 0
+LOW_DIM_COMPONENTS = 32
 SPEC_SEPARATOR = "@"
 
 
@@ -29,6 +30,11 @@ REGISTRY: dict[str, Dataset] = {
         name="dbpedia-512-100k",
         description="100k DBpedia entities, OpenAI text-embedding-3-small (512d), L2-normalized",
         prepare=dbpedia.prepare,
+    ),
+    "dbpedia-pca32-100k": Dataset(
+        name="dbpedia-pca32-100k",
+        description=f"dbpedia-512-100k projected to {LOW_DIM_COMPONENTS} dimensions with PCA",
+        prepare=derived.pca_projection(dbpedia.prepare, "dbpedia-512-100k", LOW_DIM_COMPONENTS),
     ),
 }
 

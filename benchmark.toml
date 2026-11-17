@@ -13,13 +13,20 @@ algorithms = [
     "ncvis",
     "ncvis-ef64",
     "ncvis-hq",
+    # Same pipelines with only the kNN backend swapped; see [knn] for the search-stage timings.
+    "umap-learn-rinnd",
+    "opentsne-fft-nndescent",
+    "opentsne-fft-exact",
+    "mrs-tsne-fft-nndescent",
+    "mrs-tsne-fft-hnsw",
 ]
 seeds = [0, 1, 2]
 n_threads = 8
 timeout_s = 3600
 cooldown_s = 0
-# Untimed run on the first rows first, so JIT compilation (numba) is not measured.
-warmup_rows = 2000
+# Untimed run on the first rows first, so JIT compilation (numba) is not measured. Must exceed 4096:
+# below that umap-learn uses exact distances and never compiles the PyNNDescent kNN path.
+warmup_rows = 5000
 data_dir = "data"
 results_dir = "results"
 
@@ -52,3 +59,22 @@ extend_budget = 4.0
 # Local scores are estimated on this many fixed anchor points (ranks stay exact over all N).
 anchor_rows = 10000
 results_dir = "results/curves"
+
+[knn]
+# kNN search alone: wall time and recall against the exact graph, per backend and neighbour count.
+# k=15 is the UMAP/NCVis graph; k=90 is t-SNE's 3 x perplexity. mrs-annoy (about 9 min at k=90)
+# and mrs-kmknn (about 12 min) are registered but left out of the default sweep.
+datasets = ["dbpedia-512-100k", "dbpedia-512-100k@10000", "dbpedia-512-100k@3000", "dbpedia-pca32-100k"]
+backends = [
+    "rinnd",
+    "pynndescent",
+    "opentsne-annoy",
+    "mrs-nndescent",
+    "mrs-ivf",
+    "mrs-hnsw",
+    "mrs-exhaustive",
+]
+ks = [15, 90]
+repeats = 3
+warmup_rows = 2000
+results_dir = "results/knn"

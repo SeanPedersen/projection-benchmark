@@ -1,4 +1,4 @@
-"""Command-line entry point: `drbench {prep,run,evaluate,report,all}`."""
+"""Command-line entry point: `drbench {prep,run,evaluate,report,all,curves,knn}`."""
 
 import argparse
 from pathlib import Path
@@ -37,6 +37,12 @@ def build_parser() -> argparse.ArgumentParser:
         "curves", parents=[common], help="quality vs time over a grid of epoch budgets"
     )
     curves.add_argument("--retry-failed", action="store_true")
+    knn = commands.add_parser(
+        "knn", parents=[common], help="time kNN backends and score recall against the exact graph"
+    )
+    knn.add_argument("--backends", type=csv_list(), help="comma-separated kNN backend names")
+    knn.add_argument("--ks", type=csv_list(int), help="comma-separated neighbour counts")
+    knn.add_argument("--repeats", type=int, help="timed repeats per (backend, k)")
     return parser
 
 
@@ -70,9 +76,26 @@ def run_curves_command(args: argparse.Namespace, config: Config) -> None:
     write_curves_report(curve_config)
 
 
+def run_knn_command(args: argparse.Namespace, config: Config) -> None:
+    from drbench.knn.bench import run_knn
+    from drbench.report.knn import write_knn_report
+
+    config = config.with_knn(
+        datasets=args.datasets, backends=args.backends, ks=args.ks,
+        repeats=args.repeats, results_dir=args.results_dir,
+    ).with_run(n_threads=args.threads)
+    for spec in config.knn.datasets:
+        datasets.prepare(spec, config.run.data_dir)
+    run_knn(config, config.knn.datasets, config.knn.backends)
+    write_knn_report(config)
+
+
 def main() -> None:
     args = build_parser().parse_args()
     config = resolve_config(args)
+    if args.command == "knn":
+        run_knn_command(args, config)
+        return
     if args.command == "curves":
         run_curves_command(args, config)
         return

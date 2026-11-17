@@ -44,10 +44,25 @@ class CurvesConfig:
 
 
 @dataclass(frozen=True)
+class KnnConfig:
+    datasets: tuple[str, ...]
+    backends: tuple[str, ...]
+    ks: tuple[int, ...]
+    repeats: int
+    warmup_rows: int
+    results_dir: Path
+
+
+@dataclass(frozen=True)
 class Config:
     run: RunConfig
     metrics: MetricsConfig
     curves: CurvesConfig
+    knn: KnnConfig
+
+    def with_knn(self, **overrides) -> "Config":
+        present = {key: value for key, value in overrides.items() if value is not None}
+        return replace(self, knn=replace(self.knn, **present))
 
     def with_run(self, **overrides) -> "Config":
         present = {key: value for key, value in overrides.items() if value is not None}
@@ -56,7 +71,7 @@ class Config:
 
 def load_config(path: Path) -> Config:
     raw = tomllib.loads(path.read_text())
-    run, metrics, curves = raw["run"], raw["metrics"], raw["curves"]
+    run, metrics, curves, knn = raw["run"], raw["metrics"], raw["curves"], raw["knn"]
     return Config(
         run=RunConfig(
             datasets=tuple(run["datasets"]),
@@ -84,5 +99,13 @@ def load_config(path: Path) -> Config:
             extend_budget=float(curves["extend_budget"]),
             anchor_rows=int(curves["anchor_rows"]),
             results_dir=Path(curves["results_dir"]),
+        ),
+        knn=KnnConfig(
+            datasets=tuple(knn["datasets"]),
+            backends=tuple(knn["backends"]),
+            ks=tuple(int(k) for k in knn["ks"]),
+            repeats=int(knn["repeats"]),
+            warmup_rows=int(knn["warmup_rows"]),
+            results_dir=Path(knn["results_dir"]),
         ),
     )
