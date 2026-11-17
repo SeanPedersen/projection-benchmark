@@ -203,9 +203,64 @@ def short_name(algorithm: str) -> str:
     return algorithm.removesuffix("-rinnd-default").removesuffix("-rinnd-fast")
 
 
+# Label candidates around a point: (dx, dy) in points, horizontal and vertical alignment.
+LABEL_GAP_PT = 7
+LABEL_CANDIDATES = (
+    ((LABEL_GAP_PT, 0), "left", "center"),
+    ((-LABEL_GAP_PT, 0), "right", "center"),
+    ((0, LABEL_GAP_PT), "center", "bottom"),
+    ((0, -LABEL_GAP_PT), "center", "top"),
+    ((LABEL_GAP_PT, LABEL_GAP_PT), "left", "bottom"),
+    ((LABEL_GAP_PT, -LABEL_GAP_PT), "left", "top"),
+    ((-LABEL_GAP_PT, LABEL_GAP_PT), "right", "bottom"),
+    ((-LABEL_GAP_PT, -LABEL_GAP_PT), "right", "top"),
+)
+LABEL_CLEARANCE_PX = 6  # minimum free space around every label
+MARKER_HALF_PX = 9
+
+
+def overlap_area(a, b) -> float:
+    width = min(a.x1, b.x1) - max(a.x0, b.x0)
+    height = min(a.y1, b.y1) - max(a.y0, b.y0)
+    return max(width, 0.0) * max(height, 0.0)
+
+
+def place_labels(ax, labelled: list[tuple[str, float, float]]) -> None:
+    """Direct labels: per point, the first candidate position whose padded text box is clear
+    of the other labels, the other points and the axes edge; else the least-overlapping one."""
+    from matplotlib.transforms import Bbox
+
+    renderer = ax.figure.canvas.get_renderer()
+    frame = ax.get_window_extent(renderer)
+    markers = {}
+    for name, x, y in labelled:
+        px, py = ax.transData.transform((x, y))
+        markers[name] = Bbox.from_extents(px - MARKER_HALF_PX, py - MARKER_HALF_PX,
+                                          px + MARKER_HALF_PX, py + MARKER_HALF_PX)
+    placed = []
+    for name, x, y in sorted(labelled, key=lambda item: -item[2]):
+        obstacles = placed + [box for other, box in markers.items() if other != name]
+        best, best_cost = None, np.inf
+        for offset, ha, va in LABEL_CANDIDATES:
+            text = ax.annotate(name, (x, y), textcoords="offset points", xytext=offset, ha=ha,
+                               va=va, fontsize=9, color=TEXT_PRIMARY)
+            box = text.get_window_extent(renderer).expanded(1, 1).padded(LABEL_CLEARANCE_PX)
+            outside = box.width * box.height - overlap_area(box, frame)
+            cost = outside + sum(overlap_area(box, other) for other in obstacles)
+            if cost < best_cost:
+                if best is not None:
+                    best[0].remove()
+                best, best_cost = (text, box), cost
+            else:
+                text.remove()
+            if cost == 0:
+                break
+        placed.append(best[1])
+
+
 def plot_quality_map(points, dataset: str, path: Path) -> None:
     """Local vs global score (mean over seeds) per algorithm, one panel per N stacked
-    vertically. Up and right is better on both axes. Identity: colour + marker, one legend."""
+    vertically, each point labelled directly. Up and right is better on both axes."""
     names = sorted({p.algorithm for p in points})
     colors = algorithm_colors(names)
     markers = {p.algorithm: LIBRARY_MARKERS.get(p.library, "o") for p in points}
@@ -221,14 +276,14 @@ def plot_quality_map(points, dataset: str, path: Path) -> None:
         ax.set_title(f"N = {n:,}", color=TEXT_PRIMARY, fontsize=10, loc="left")
         ax.set_ylabel("Local (trustworthiness) →", color=TEXT_SECONDARY, fontsize=9)
         ax.tick_params(labelbottom=True)
+        ax.margins(x=0.25, y=0.12)  # room for labels on every side of the outermost points
     np.atleast_1d(axes)[-1].set_xlabel("Global (random-pair Spearman ρ) →",
                                        color=TEXT_SECONDARY, fontsize=9)
-    handles = [plt.Line2D([], [], color=colors[name], marker=markers[name], markersize=9,
-                          linestyle="", label=short_name(name)) for name in names]
     fig.suptitle(f"Projection quality — {dataset} (mean over 3 seeds, up and right is better)",
                  color=TEXT_PRIMARY, fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.98))
-    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=4,
-               frameon=False, fontsize=9, labelcolor=TEXT_PRIMARY)
-    fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor=SURFACE)
+    for ax, n in zip(np.atleast_1d(axes), sizes):
+        place_labels(ax, [(short_name(p.algorithm), p.mean["global"], p.mean["local"])
+                          for p in points if p.n == n])
+    fig.savefig(path, dpi=DPI, facecolor=SURFACE)
     plt.close(fig)
