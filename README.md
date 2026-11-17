@@ -80,6 +80,65 @@ shared [RINND](https://pypi.org/project/rinnd/) graph (see [Measurement protocol
 - More kNN detail in [#1](../../issues/1): isolated backend timings and recall, manifolds-rs's own
   NN-Descent (slow, about 3.4 GB at 36 threads), and why PCA + NN-Descent + rerank does not pay off at 512-d.
 
+## Scaling with N (shared RINND graph, 36 threads, i9-7980XE)
+
+The best kNN setup of every algorithm (a shared [RINND](https://pypi.org/project/rinnd/) graph,
+RINND's default parameters) on one corpus at N = 10k, 100k and 512k: `jinaclip-512-1m`, 3 seeds each.
+Full table: [`results/scaling/SCALING.md`](results/scaling/SCALING.md) (`drbench scaling`).
+
+| algorithm | N | fit time | of which kNN | peak memory | local | global (pair ρ) | triplet |
+|---|---|---|---|---|---|---|---|
+| pca | 10k / 100k / 512k | 0.1 / 0.4 / 1.4 s | – | 0.2 / 0.5 / 1.7 GB | 0.644 / 0.644 / 0.644 | 0.278 / 0.243 / 0.234 | 0.601 / 0.597 / 0.595 |
+| mrs-umap-rinnd-default | 10k / 100k / 512k | 0.5 / 3.3 / 18.0 s | 0.1 / 0.7 / 4.7 s | 0.1 / 0.4 / 1.8 GB | 0.816 / 0.853 / 0.855 | 0.115 / 0.113 / 0.093 | 0.550 / 0.549 / 0.544 |
+| ncvis-rinnd-default | 10k / 100k / 512k | 0.5 / 4.4 / 22.7 s | 0.1 / 0.7 / 4.7 s | 0.2 / 0.4 / 1.9 GB | 0.897 / 0.922 / 0.928 | 0.126 / 0.109 / 0.067 | 0.552 / 0.546 / 0.531 |
+| umap-learn-rinnd-default | 10k / 100k / 512k | 1.8 / 7.3 / 43.3 s | 0.1 / 0.7 / 4.7 s | 0.6 / 0.9 / 2.3 GB | 0.852 / 0.882 / 0.889 | 0.122 / 0.121 / 0.114 | 0.554 / 0.551 / 0.549 |
+| mrs-tsne-fft-rinnd-default | 10k / 100k / 512k | 2.4 / 15.4 / 73.2 s | 0.5 / 5.2 / 30.2 s | 0.6 / 1.6 / 5.7 GB | 0.912 / 0.957 / 0.968 | 0.192 / 0.214 / 0.188 | 0.570 / 0.578 / 0.569 |
+| mrs-pacmap-rinnd-default | 10k / 100k / 512k | 3.5 / 24.6 / 120.0 s | 0.4 / 3.5 / 20.4 s | 0.6 / 2.3 / 8.8 GB | 0.812 / 0.833 / 0.844 | 0.087 / 0.086 / 0.092 | 0.549 / 0.547 / 0.545 |
+| opentsne-fft-rinnd-default | 10k / 100k / 512k | 35.0 / 82.9 / 241.8 s | 0.5 / 5.2 / 30.2 s | 0.7 / 1.6 / 4.3 GB | 0.907 / 0.958 / 0.971 | 0.198 / 0.202 / 0.168 | 0.568 / 0.574 / 0.564 |
+
+Means over 3 seeds; seed sd (in `SCALING.md`) is ≤ 0.004 for local, but up to 0.027 for global.
+
+![Wall time vs N](results/scaling/figures/jinaclip-512-1m-scaling-time.png)
+![Peak memory vs N](results/scaling/figures/jinaclip-512-1m-scaling-memory.png)
+![Quality vs N](results/scaling/figures/jinaclip-512-1m-scaling-quality.png)
+
+- **Fit time grows roughly linearly with N** (×5.1 in N from 100k to 512k gives ×4.7–5.9) for every
+  nonlinear method except openTSNE. openTSNE costs 35 s already at 10k (583 CPU s) and only ×2.9 from 100k
+  to 512k: most of its work is a per-iteration cost that barely depends on N. The likely cause is
+  the FFT interpolation grid, whose size follows the embedding's extent, not N. manifolds-rs t-SNE
+  is 3.3× faster at 512k with the same local score (0.968 vs 0.971) and higher global ρ.
+- **The kNN graph is a large share of t-SNE and PaCMAP time:** the k=90 graph takes 30 s of
+  mrs-tsne-fft's 73 s at 512k, the k=60 graph 20 s of PaCMAP's 120 s. The k=15 graph (NCVis,
+  UMAP) takes 4.7 s.
+- **Memory:** PaCMAP needs 8.8 GB at 512k, manifolds-rs t-SNE 5.7 GB, openTSNE 4.3 GB. NCVis and
+  both UMAPs stay below 2.3 GB, close to PCA (1.7 GB, mostly the 1 GB data matrix).
+- **Ranking is stable across N.** Local: t-SNE > NCVis > umap-learn > mrs-umap > PaCMAP > PCA at
+  every size. Global: PCA > t-SNE > the rest. NCVis loses the most global structure as N grows
+  (ρ 0.126 → 0.067).
+- This corpus is much harder than dbpedia: at 100k the local scores are 0.03–0.08 lower and the
+  nonlinear methods' global ρ is 0.09–0.21 (dbpedia: 0.23–0.28).
+
+Caveats:
+- **Different k per method:** each method gets a graph at its own k (15 for UMAP and NCVis, 60 for
+  PaCMAP's `n_near + 50`, 90 = 3 × perplexity for t-SNE), so "kNN time" differs by design. The
+  graph is built once per (N, k) and shared across seeds and methods; every run that uses it is
+  charged its build time and extra memory, as in the table above.
+- **Default vs fast RINND schedule:** this run uses RINND's default parameters. The `-rinnd-fast`
+  schedules in the 100k table were tuned at 100k, and on this corpus their recall drops with N:
+  at 512k recall@k is 0.866 (k=15, same as default), 0.872 (k=60) and 0.816 (k=90), against 0.982
+  and 0.985 with the default schedule, which takes 20 s and 30 s instead of 9 and 10 s.
+- **Local scores across N:** trustworthiness is normalised by N, so one embedding's score is not
+  directly comparable across sizes; compare methods within one N. At 512k local scores are
+  estimated on 10,000 fixed anchor points (ranks stay exact over all N); at 10k and 100k every point
+  is scored. Global and triplet use 1M sampled pairs / triplets at every N.
+- **Subsamples:** fixed random draws from the 999,500 rows. `@100000` ⊂ `@512000` (numpy draws a
+  permutation prefix for large samples), but `@10000` is an independent draw.
+- **t-SNE learning rate:** both libraries run the same 750-iteration schedule, but openTSNE's
+  learning rate is N / exaggeration per phase, manifolds-rs uses max(N/12, 200) throughout.
+- **Dataset provenance:** `jinaclip-512-1m` is a 999,500 × 512 float32, L2-normalised file on the
+  benchmark host, most likely jina-clip-v2 caption embeddings. Its exact provenance is not
+  confirmed, and the file is not downloadable from this repo (`DRBENCH_JINACLIP_1M` sets the path).
+
 ## Dataset (milestone 1)
 
 `dbpedia-512-100k` is 100k DBpedia entities embedded with OpenAI `text-embedding-3-small` (512-d).

@@ -4,7 +4,7 @@ Benchmark of dimensionality-reduction implementations: quality (local/global) vs
 It is all Python (3.12, uv). Rust and C++ libraries come in through their Python bindings.
 
 ## Commands
-- Run tests and every sweep on hartmut, not locally: `uv sync` and `uv run pytest` (63 tests; metric tests compare against sklearn to 1e-12)
+- Run tests and every sweep on hartmut, not locally: `uv sync` and `uv run pytest` (64 tests; metric tests compare against sklearn to 1e-12)
 - `uv run ruff check src tests`
 - `uv run drbench {prep,run,evaluate,report,all,curves,knn} [--subsample N --seeds 0,1 --algos a,b --results-dir DIR --timeout S --threads T]`
 - Config: `benchmark.toml`. CLI flags override `[run]`. `[curves]` configures the budget sweep, which writes to `results/curves/`. `[knn]` configures `drbench knn` (`--backends`, `--ks`, `--repeats` override), which writes `results/knn/knn.jsonl` and `KNN.md`.
@@ -41,4 +41,6 @@ It is all Python (3.12, uv). Rust and C++ libraries come in through their Python
 - Never measure memory with `ru_maxrss` from wait4: it includes the parent's RSS at fork. Workers must not import heavy modules they don't need (pyarrow and niquests are imported lazily in `datasets/dbpedia.py`).
 - manifolds-rs defaults to `min_dist=0.5`; the adapter sets 0.1 to match umap-learn.
 - Never run timed sweeps concurrently (including evaluation). They share the CPU and distort the timings.
-- `data/`, `results/` and `results-*/` are gitignored.
+- `data/`, `results/` and `results-*/` are gitignored, except the tracked summaries in `results/`, `results/curves/` and `results/scaling/` (README figures link there).
+- The scaling run (2026-11-17, hartmut, `results-scaling/` there and locally) is summarised in the README; `results-scaling-fast/` holds the aborted fast-schedule attempt.
+- Never `pkill -f` over ssh: the pattern matches the ssh command itself. Kill by PID.

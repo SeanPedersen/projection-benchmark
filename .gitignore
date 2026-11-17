@@ -14,6 +14,12 @@ results/curves/*
 !results/curves/runs.jsonl
 !results/curves/metrics.jsonl
 !results/curves/figures/
+results/scaling/*
+!results/scaling/
+!results/scaling/SCALING.md
+!results/scaling/runs.jsonl
+!results/scaling/metrics.jsonl
+!results/scaling/figures/
 results-*/
 target/
 .pytest_cache/

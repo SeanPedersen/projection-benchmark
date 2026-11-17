@@ -11,6 +11,9 @@ from pathlib import Path
 import numpy as np
 
 from drbench import algorithms, datasets
+from drbench.algorithms.params import N_NEIGHBORS
+from drbench.algorithms.tsne import TSNE_NEIGHBORS
+from drbench.algorithms.umap import PACMAP_SEARCH_WIDTH
 from drbench.config import Config
 from drbench.report.plots import plot_scaling_memory, plot_scaling_quality, plot_scaling_time
 from drbench.runner.evaluate import current_scores
@@ -26,6 +29,9 @@ COLUMNS = (  # (record field, header, format)
     ("triplet_acc", "triplet", "{:.3f}"),
 )
 MISSING = "–"
+# Neighbour count of the shared graph each family uses; families with equal k share one graph.
+GRAPH_K = {"umap": N_NEIGHBORS, "ncvis": N_NEIGHBORS, "pacmap": PACMAP_SEARCH_WIDTH,
+           "t-sne": TSNE_NEIGHBORS}
 
 
 @dataclass(frozen=True)
@@ -77,6 +83,23 @@ def aggregate(grouped: dict[tuple[str, int], list[dict]]) -> list[Point]:
     return points
 
 
+def graph_lines(points: list[Point]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Build time of each shared kNN graph vs N, labelled with k and the families using it."""
+    by_k: dict[int, dict[int, list[float]]] = defaultdict(lambda: defaultdict(list))
+    families: dict[int, set[str]] = defaultdict(set)
+    for p in points:
+        if p.family in GRAPH_K and p.mean["knn_s"] > 0:
+            by_k[GRAPH_K[p.family]][p.n].append(p.mean["knn_s"])
+            families[GRAPH_K[p.family]].add(p.family)
+    lines = {}
+    for k in sorted(by_k):
+        sizes = sorted(by_k[k])
+        label = f"kNN k={k} ({', '.join(sorted(families[k]))})"
+        lines[label] = (np.array(sizes, dtype=float),
+                        np.array([np.mean(by_k[k][n]) for n in sizes]))
+    return lines
+
+
 def algorithm_order(points: list[Point]) -> list[str]:
     """Fastest first at the largest N."""
     largest = max(p.n for p in points)
@@ -120,7 +143,7 @@ def write_scaling_report(config: Config) -> Path:
         "memory": figures / f"{dataset}-scaling-memory.png",
         "quality": figures / f"{dataset}-scaling-quality.png",
     }
-    plot_scaling_time(points, names, dataset, charts["time"])
+    plot_scaling_time(points, names, graph_lines(points), dataset, charts["time"])
     plot_scaling_memory(points, names, dataset, charts["memory"])
     plot_scaling_quality(points, names, dataset, charts["quality"])
 

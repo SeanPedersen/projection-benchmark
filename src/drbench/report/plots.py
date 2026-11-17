@@ -208,17 +208,29 @@ def algorithm_colors(names: list[str]) -> dict[str, str]:
     return {name: CATEGORICAL[i % len(CATEGORICAL)] for i, name in enumerate(sorted(names))}
 
 
+def spread_positions(desired: list[float], gap: float) -> list[float]:
+    """Positions (ascending input) at least `gap` apart, each colliding group centred on the
+    mean of its desired positions, so labels move as little as possible."""
+    groups: list[list[float]] = []  # each: desired positions of one group
+    def placed(group: list[float]) -> list[float]:
+        start = float(np.mean(group)) - gap * (len(group) - 1) / 2
+        return [start + gap * i for i in range(len(group))]
+    for y in desired:
+        groups.append([y])
+        while len(groups) > 1 and placed(groups[-2])[-1] + gap > placed(groups[-1])[0]:
+            groups[-2:] = [groups[-2] + groups[-1]]
+    return [y for group in groups for y in placed(group)]
+
+
 def end_labels(ax, ends: list[tuple[str, float, float]]) -> None:
-    """Name labels right of each line's last point, nudged apart vertically so none overlap."""
+    """Name labels right of each line's last point, spread vertically so none overlap."""
     to_axes = ax.transAxes.inverted().transform
     placed = sorted(
         ((name, x, y, to_axes(ax.transData.transform((x, y)))[1]) for name, x, y in ends),
         key=lambda item: item[3],
     )
-    floor = -np.inf
-    for name, x, y, y_axes in placed:
-        target = max(y_axes, floor + SCALING_LABEL_GAP)
-        floor = target
+    targets = spread_positions([item[3] for item in placed], SCALING_LABEL_GAP)
+    for (name, x, y, y_axes), target in zip(placed, targets):
         dy_points = (target - y_axes) * ax.bbox.height * 72 / ax.figure.dpi
         ax.annotate(name, (x, y), textcoords="offset points", xytext=(SCALING_LABEL_DX, dy_points),
                     va="center", fontsize=8, color=TEXT_PRIMARY)
@@ -266,17 +278,21 @@ def finish_scaling_figure(fig, axes, points, names, colors, title: str, path: Pa
     plt.close(fig)
 
 
-def plot_scaling_time(points, names: list[str], dataset: str, path: Path) -> None:
-    """Fit time (solid) and the shared kNN graph's build time (dashed) vs N, log-log."""
+KNN_LINESTYLES = ((0, (5, 2)), (0, (2, 2)), (0, (8, 2, 2, 2)))
+
+
+def plot_scaling_time(points, names: list[str], graphs: dict[str, tuple[np.ndarray, np.ndarray]],
+                      dataset: str, path: Path) -> None:
+    """Fit time per algorithm (solid) and build time of each shared kNN graph (grey, dashed)
+    vs N, log-log. `graphs` maps a label to (N, seconds)."""
     colors = algorithm_colors(names)
     fig, ax = plt.subplots(figsize=(9, 5.5), facecolor=SURFACE)
     style_axes(ax)
     ax.set_yscale("log")
     ends = draw_scaling_lines(ax, points, names, "fit_s", colors)
-    for name in names:
-        xs, knn, _ = scaling_series(points, name, "knn_s")
-        if len(xs) and knn.max() > 0:
-            ax.plot(xs, knn, color=colors[name], linewidth=1.2, linestyle="--", alpha=0.8, zorder=2)
+    for (label, (xs, seconds)), style in zip(graphs.items(), KNN_LINESTYLES):
+        ax.plot(xs, seconds, color=TEXT_SECONDARY, linewidth=1.2, linestyle=style, zorder=2)
+        ends.append((label, xs[-1], seconds[-1]))
     sizes = np.array(sorted({p.n for p in points}), dtype=float)
     smallest_fit = min(p.mean["fit_s"] for p in points if p.n == sizes[0])
     ax.plot(sizes, smallest_fit * sizes / sizes[0], color=FRONTIER, linewidth=1, linestyle=":",
@@ -286,7 +302,7 @@ def plot_scaling_time(points, names: list[str], dataset: str, path: Path) -> Non
     end_labels(ax, ends)
     extra = (plt.Line2D([], [], color=TEXT_SECONDARY, linewidth=2, label="fit (kNN included)"),
              plt.Line2D([], [], color=TEXT_SECONDARY, linewidth=1.2, linestyle="--",
-                        label="kNN graph build"),
+                        label="shared kNN graph build (grey)"),
              plt.Line2D([], [], color=FRONTIER, linewidth=1, linestyle=":", label="∝ N"))
     finish_scaling_figure(fig, [ax], points, names, colors,
                           f"Wall time vs N — {dataset} (mean over seeds)", path, extra)

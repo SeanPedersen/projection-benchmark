@@ -1,10 +1,14 @@
 """Scaling report: aggregation over seeds, layout time, table and charts from synthetic records."""
 
+import itertools
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from drbench.config import load_config
 from drbench.metrics import METRICS_VERSION
+from drbench.report.plots import spread_positions
 from drbench.report.scaling import write_scaling_report
 from drbench.runner.records import append_jsonl, metrics_path, runs_path
 
@@ -41,3 +45,11 @@ def test_scaling_report(tmp_path):
     assert "| pca | 1,000 | 1.5 ± 0.7 | 0.0 ± 0.0 | 1.5 ± 0.7 |" in report
     for chart in ("time", "memory", "quality"):
         assert (tmp_path / "figures" / f"dbpedia-512-100k-scaling-{chart}.png").stat().st_size
+
+
+def test_spread_positions_keeps_gap_and_centres_groups():
+    assert spread_positions([0.0, 0.5, 1.0], 0.1) == [0.0, 0.5, 1.0]
+    desired = [0.50, 0.50, 0.52]
+    placed = spread_positions(desired, 0.1)
+    assert all(b - a >= 0.1 - 1e-12 for a, b in itertools.pairwise(placed))
+    assert sum(placed) == pytest.approx(sum(desired))
