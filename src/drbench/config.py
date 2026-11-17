@@ -26,7 +26,9 @@ class MetricsConfig:
     n_random_pairs: int
     n_triplets: int
     chunk_rows: int
+    # Local scores use `anchor_rows` fixed anchor points once N exceeds `anchors_above_n`.
     anchor_rows: int | None = None
+    anchors_above_n: int = 0
 
     @property
     def k_max(self) -> int:
@@ -92,6 +94,8 @@ def load_config(path: Path) -> Config:
             n_random_pairs=int(metrics["n_random_pairs"]),
             n_triplets=int(metrics["n_triplets"]),
             chunk_rows=int(metrics["chunk_rows"]),
+            anchor_rows=metrics.get("anchor_rows"),
+            anchors_above_n=int(metrics.get("anchors_above_n", 0)),
         ),
         curves=CurvesConfig(
             algorithms=tuple(curves["algorithms"]),

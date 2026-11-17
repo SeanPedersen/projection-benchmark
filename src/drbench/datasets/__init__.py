@@ -1,7 +1,10 @@
 """Dataset registry.
 
 A dataset spec is `name` or `name@N`. `@N` takes a fixed random subsample of N rows, so
-quick runs and the full run share one code path and keep separate caches.
+quick runs and the full run share one code path and keep separate caches. Subsamples of one
+dataset are not guaranteed to be nested: numpy draws a permutation prefix for large samples
+(so jinaclip-512-1m@100000 ⊂ @512000) but a different algorithm for small ones (@10000 is an
+independent draw).
 Each dataset module provides `prepare(target_dir)`, which writes `X.npy` (float32, rows = samples).
 """
 
@@ -11,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from drbench.datasets import dbpedia, derived
+from drbench.datasets import dbpedia, derived, local_file
 
 SUBSAMPLE_SEED = 0
 LOW_DIM_COMPONENTS = 32
@@ -36,6 +39,12 @@ REGISTRY: dict[str, Dataset] = {
         description=f"dbpedia-512-100k projected to {LOW_DIM_COMPONENTS} dimensions with PCA",
         prepare=derived.pca_projection(dbpedia.prepare, "dbpedia-512-100k", LOW_DIM_COMPONENTS),
     ),
+    "jinaclip-512-1m": Dataset(
+        name="jinaclip-512-1m",
+        description="999,500 caption embeddings, probably jina-clip-v2 (512d), L2-normalized; "
+                    "local file on the benchmark host, provenance unconfirmed",
+        prepare=local_file.symlinked(local_file.JINACLIP_1M_PATH, local_file.JINACLIP_1M_ENV),
+    ),
 }
 
 
@@ -47,8 +56,9 @@ def parse_spec(spec: str) -> tuple[str, int | None]:
 
 
 def with_subsample(spec: str, n_rows: int | None) -> str:
+    """`spec` resized to `n_rows`; without `n_rows` the spec (and any `@N` in it) is kept."""
     name, _ = parse_spec(spec)
-    return f"{name}{SPEC_SEPARATOR}{n_rows}" if n_rows else name
+    return f"{name}{SPEC_SEPARATOR}{n_rows}" if n_rows else spec
 
 
 def cache_dir(spec: str, data_dir: Path) -> Path:
@@ -72,7 +82,7 @@ def prepare(spec: str, data_dir: Path) -> Path:
     spec_path = cache_dir(spec, data_dir) / "X.npy"
     if n_rows is not None and not spec_path.exists():
         spec_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(spec_path, subsample(np.load(full_path), n_rows))
+        np.save(spec_path, subsample(np.load(full_path, mmap_mode="r"), n_rows))
     return spec_path
 
 

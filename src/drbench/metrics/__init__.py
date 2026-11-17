@@ -5,6 +5,10 @@ the exact kNN, the sampled pairs and triplets, and k-means labels (thumbnail col
 computed once and cached in `data/<spec>/reference.npz`; parts that are missing or sized
 differently from the config are recomputed on load, the rest is kept.
 
+Above `anchors_above_n` points, local scores are estimated on `anchor_rows` fixed anchor points
+(ranks stay exact over all N), and the reference kNN is computed for those anchors only: an exact
+kNN of every point is an N² brute force. A full-N kNN in the cache serves any anchor set.
+
 `local` = mean trustworthiness over `k_local`; `global` = random-pair Spearman ρ.
 `METRICS_VERSION` changes whenever a score's definition does, so stored scores get recomputed.
 """
@@ -22,20 +26,54 @@ from drbench.metrics.neighbors import exact_knn, lowdim_knn, neighbor_ranks
 METRICS_VERSION = 2
 
 
+ANCHOR_SEED = 0
+
+
+def anchor_rows(n_points: int, config: MetricsConfig) -> np.ndarray | None:
+    """Fixed random anchor sample for local scores, or None for all points."""
+    n_anchors = config.anchor_rows
+    if not n_anchors or n_anchors >= n_points or n_points <= config.anchors_above_n:
+        return None
+    return np.sort(np.random.default_rng(ANCHOR_SEED).choice(n_points, n_anchors, replace=False))
+
+
 @dataclass(frozen=True)
 class Reference:
+    """`knn[i]` are the exact neighbours of point `knn_rows[i]` (of point i if `knn_rows` is None)."""
+
     knn: np.ndarray
     color_labels: np.ndarray
     pairs: gg.PairReference
     triplets: gg.TripletReference
+    knn_rows: np.ndarray | None = None
+
+    def covers(self, rows: np.ndarray | None, k: int) -> bool:
+        if self.knn.shape[1] < k:
+            return False
+        if self.knn_rows is None:
+            return True
+        return rows is not None and np.array_equal(rows, self.knn_rows)
+
+    def neighbors_of(self, rows: np.ndarray | None, k: int) -> np.ndarray:
+        if not self.covers(rows, k):
+            raise ValueError("reference kNN does not cover the requested rows")
+        knn = self.knn[:, :k]
+        return knn if rows is None or self.knn_rows is not None else knn[rows]
+
+
+def build_knn(X: np.ndarray, config: MetricsConfig) -> tuple[np.ndarray, np.ndarray | None]:
+    rows = anchor_rows(len(X), config)
+    return exact_knn(X, config.k_max, config.chunk_rows, rows), rows
 
 
 def build_reference(X: np.ndarray, config: MetricsConfig) -> Reference:
+    knn, knn_rows = build_knn(X, config)
     return Reference(
-        knn=exact_knn(X, config.k_max, config.chunk_rows),
+        knn=knn,
         color_labels=gg.cluster_labels(X, config.color_clusters),
         pairs=gg.sample_pairs(X, config.n_random_pairs),
         triplets=gg.sample_triplets(X, config.n_triplets),
+        knn_rows=knn_rows,
     )
 
 
@@ -50,6 +88,8 @@ def save_reference(reference: Reference, path: Path) -> None:
               "triplet_second": reference.triplets.second,
               "triplet_first_closer": reference.triplets.first_closer}
     arrays[labels_key(len(np.unique(reference.color_labels)))] = reference.color_labels
+    if reference.knn_rows is not None:
+        arrays["knn_rows"] = reference.knn_rows
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(path, **arrays)
 
@@ -69,8 +109,13 @@ def load_reference(path: Path, X: np.ndarray, config: MetricsConfig) -> tuple[Re
         data["triplet_anchor"], data["triplet_first"], data["triplet_second"],
         data["triplet_first_closer"],
     ) if triplets_cached else gg.sample_triplets(X, config.n_triplets)
-    extended = not (labels_cached and pairs_cached and triplets_cached)
-    reference = Reference(knn=data["knn"], color_labels=color_labels, pairs=pairs, triplets=triplets)
+    cached_knn = Reference(knn=data["knn"], color_labels=color_labels, pairs=pairs,
+                           triplets=triplets, knn_rows=data.get("knn_rows"))
+    knn_cached = cached_knn.covers(anchor_rows(len(X), config), config.k_max)
+    knn, knn_rows = (cached_knn.knn, cached_knn.knn_rows) if knn_cached else build_knn(X, config)
+    extended = not (labels_cached and pairs_cached and triplets_cached and knn_cached)
+    reference = Reference(knn=knn, color_labels=color_labels, pairs=pairs, triplets=triplets,
+                          knn_rows=knn_rows)
     return reference, extended
 
 
@@ -85,21 +130,11 @@ def reference_for(X: np.ndarray, path: Path, config: MetricsConfig) -> Reference
     return reference
 
 
-ANCHOR_SEED = 0
-
-
-def anchor_rows(n_points: int, n_anchors: int | None) -> np.ndarray | None:
-    """Fixed random anchor sample for local scores, or None for all points."""
-    if not n_anchors or n_anchors >= n_points:
-        return None
-    return np.sort(np.random.default_rng(ANCHOR_SEED).choice(n_points, n_anchors, replace=False))
-
-
 def evaluate(X: np.ndarray, Y: np.ndarray, reference: Reference, config: MetricsConfig) -> dict[str, float]:
     Y = np.ascontiguousarray(Y, dtype=np.float64)
     n_points = len(X)
-    rows = anchor_rows(n_points, config.anchor_rows)
-    hd_neighbors = reference.knn if rows is None else reference.knn[rows]
+    rows = anchor_rows(n_points, config)
+    hd_neighbors = reference.neighbors_of(rows, config.k_max)
     ranks_hd = neighbor_ranks(X, lowdim_knn(Y, config.k_max, rows), config.chunk_rows, rows)
     ranks_ld = neighbor_ranks(Y, hd_neighbors, config.chunk_rows, rows)
 

@@ -16,6 +16,7 @@ built at most once per (dataset, k, schedule, threads) and stored with its build
 peak RSS above the worker's baseline. A run that loads a stored graph is charged both
 (`charged_cost()`): the build time is added to its fit time, and its peak becomes at least its own
 baseline plus the graph's extra memory. So it reports what building the graph itself would cost.
+Every run that uses a graph (built or loaded) also reports the graph's build time as `knn_s`.
 """
 
 import time
@@ -36,8 +37,16 @@ RINND_FAST: dict[int, dict] = {
 
 @dataclass
 class ChargedCost:
+    """`build_s`/`extra_rss_kb`: what loading stored graphs adds on top of the measured run.
+    `knn_s`: build time of every graph the run used, built here or loaded (None if it used none),
+    so layout time = fit time - knn_s."""
+
     build_s: float = 0.0
     extra_rss_kb: int = 0
+    knn_s: float | None = None
+
+    def add_graph_time(self, seconds: float) -> None:
+        self.knn_s = (self.knn_s or 0.0) + seconds
 
 
 _cache_dir: Path | None = None
@@ -81,11 +90,13 @@ def rinnd_graph(X: np.ndarray, k: int, n_threads: int) -> tuple[np.ndarray, np.n
     if path.exists():
         stored = np.load(path)
         _charged.build_s += float(stored["build_s"])
+        _charged.add_graph_time(float(stored["build_s"]))
         _charged.extra_rss_kb = max(_charged.extra_rss_kb, int(stored["extra_rss_kb"]))
         return stored["indices"], stored["distances"]
     started = time.perf_counter()
     indices, distances = build_rinnd_graph(X, k, n_threads)
     build_s = time.perf_counter() - started
+    _charged.add_graph_time(build_s)
     path.parent.mkdir(parents=True, exist_ok=True)
     # VmHWM is the peak since the worker's reset, so this is what the build added over baseline.
     np.savez(path, indices=indices, distances=distances, build_s=build_s,

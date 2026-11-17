@@ -84,3 +84,9 @@ def test_anchor_estimate_is_close_to_full_score(spaces):
         neighbor_ranks(X, lowdim_knn(Y, K_MAX, rows), CHUNK_ROWS, rows), 15, N_POINTS
     )
     assert sampled == pytest.approx(full, abs=0.01)
+
+
+def test_exact_knn_of_anchor_rows_matches_full(spaces):
+    X, _ = spaces
+    rows = np.array([3, 17, 250, 499])
+    np.testing.assert_array_equal(exact_knn(X, K_MAX, CHUNK_ROWS, rows), exact_knn(X, K_MAX, CHUNK_ROWS)[rows])

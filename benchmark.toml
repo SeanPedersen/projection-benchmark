@@ -48,6 +48,11 @@ recall_k = 15
 n_random_pairs = 1000000
 n_triplets = 1000000
 chunk_rows = 512
+# Above anchors_above_n points, local scores are estimated on anchor_rows fixed anchor points
+# (ranks stay exact over all N, and the reference kNN is computed for the anchors only).
+# Exact ranks for every point cost about 50 s per embedding at 100k and ~20 min at 512k.
+anchor_rows = 10000
+anchors_above_n = 100000
 
 [curves]
 # Quality vs time: each tunable algorithm reruns with its default epoch count scaled by these

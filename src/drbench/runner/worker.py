@@ -8,7 +8,8 @@ CPU time (user + system, summed over all threads) is measured alongside wall tim
 implementations differ in how well they use the available cores.
 Peak RSS still includes everything resident at the start: interpreter, data, loaded libraries.
 `-rinnd-fast` variants share kNN graphs across runs (`algorithms/knn_graph.py`); a run that loads
-one is charged the stored build time and extra memory, recorded as `shared_knn_s`.
+one is charged the stored build time and extra memory, recorded as `shared_knn_s`. `knn_s` is the
+graph build time of every run that used a shared graph, whether it built or loaded it.
 """
 
 import argparse
@@ -70,7 +71,7 @@ def main() -> None:
     np.save(args.embedding_path, Y)
     sidecar = {
         "fit_s": fit_s, "cpu_s": cpu_s, "baseline_rss_kb": baseline_kb, "peak_rss_kb": peak_kb,
-        "n": len(X), "dim": X.shape[1], "shared_knn_s": shared.build_s,
+        "n": len(X), "dim": X.shape[1], "shared_knn_s": shared.build_s, "knn_s": shared.knn_s,
     }
     args.embedding_path.with_suffix(".json").write_text(json.dumps(sidecar))
 

@@ -136,6 +136,7 @@ def execute(key: RunKey, config: Config) -> dict:
         "fit_s": sidecar["fit_s"],
         "cpu_s": sidecar["cpu_s"],
         "shared_knn_s": sidecar.get("shared_knn_s", 0.0),
+        "knn_s": sidecar.get("knn_s"),
         "epochs": algorithms.get(key.algorithm).epochs(key.budget),
         "peak_rss_mb": peak_mb,
         "peak_rss_source": "worker",

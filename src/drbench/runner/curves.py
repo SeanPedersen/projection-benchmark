@@ -27,7 +27,7 @@ def curves_config(config: Config, results_dir: Path | None = None) -> Config:
             seeds=(curves.seed,),
             results_dir=results_dir or curves.results_dir,
         ),
-        metrics=replace(config.metrics, anchor_rows=curves.anchor_rows),
+        metrics=replace(config.metrics, anchor_rows=curves.anchor_rows, anchors_above_n=0),
     )
 
 

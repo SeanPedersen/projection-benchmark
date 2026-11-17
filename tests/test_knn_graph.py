@@ -30,10 +30,13 @@ def test_graph_layout():
 
 def test_reuse_charges_stored_build_cost(fresh_cache):
     X = np.random.default_rng(1).standard_normal((600, 16)).astype(np.float32)
+    assert knn_graph.charged_cost().knn_s is None
     built = knn_graph.rinnd_graph(X, K, n_threads=2)
     assert knn_graph.charged_cost().build_s == 0.0
     stored = np.load(next(fresh_cache.glob("*.npz")))
+    assert knn_graph.charged_cost().knn_s == pytest.approx(float(stored["build_s"]))
     loaded = knn_graph.rinnd_graph(X, K, n_threads=2)
     np.testing.assert_array_equal(loaded[0], built[0])
     assert knn_graph.charged_cost().build_s == pytest.approx(float(stored["build_s"]))
     assert knn_graph.charged_cost().extra_rss_kb == int(stored["extra_rss_kb"])
+    assert knn_graph.charged_cost().knn_s == pytest.approx(2 * float(stored["build_s"]))

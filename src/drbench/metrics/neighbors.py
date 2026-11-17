@@ -139,18 +139,21 @@ def drop_self(indices: np.ndarray, rows: np.ndarray) -> np.ndarray:
     return indices[~is_self].reshape(n_rows, width - 1)
 
 
-def exact_knn(space: np.ndarray, k: int, chunk_rows: int) -> np.ndarray:
-    """Exact k nearest neighbours (self excluded), sorted by distance. Brute force in chunks."""
-    n_points = len(space)
+def exact_knn(
+    space: np.ndarray, k: int, chunk_rows: int, rows: np.ndarray | None = None
+) -> np.ndarray:
+    """Exact k nearest neighbours of `rows` (default: all) among all points, self excluded,
+    sorted by distance. Brute force in chunks."""
+    rows = all_rows(space) if rows is None else rows
     sq_norms = np.einsum("ij,ij->i", space, space)
-    knn = np.empty((n_points, k + 1), dtype=np.int64)
-    for start in range(0, n_points, chunk_rows):
-        stop = min(start + chunk_rows, n_points)
-        distances = squared_distances(space[start:stop], space, sq_norms)
+    knn = np.empty((len(rows), k + 1), dtype=np.int64)
+    for start in range(0, len(rows), chunk_rows):
+        stop = min(start + chunk_rows, len(rows))
+        distances = squared_distances(space[rows[start:stop]], space, sq_norms)
         candidates = np.argpartition(distances, k, axis=1)[:, : k + 1]
         order = np.argsort(np.take_along_axis(distances, candidates, axis=1), axis=1)
         knn[start:stop] = np.take_along_axis(candidates, order, axis=1)
-    return drop_self(knn, all_rows(space))
+    return drop_self(knn, rows)
 
 
 def lowdim_knn(Y: np.ndarray, k: int, rows: np.ndarray | None = None) -> np.ndarray:
