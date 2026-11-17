@@ -42,6 +42,6 @@ It is all Python (3.12, uv). Rust and C++ libraries come in through their Python
 - Never measure memory with `ru_maxrss` from wait4: it includes the parent's RSS at fork. Workers must not import heavy modules they don't need (pyarrow and niquests are imported lazily in `datasets/dbpedia.py`).
 - manifolds-rs defaults to `min_dist=0.5`; the adapter sets 0.1 to match umap-learn.
 - Never run timed sweeps concurrently (including evaluation). They share the CPU and distort the timings.
-- `data/`, `results/` and `results-*/` are gitignored, except the tracked summaries in `results/`, `results/curves/` and `results/scaling/` (README figures link there).
+- `data/`, `results/` and `results-*/` are gitignored, except the tracked summaries in `results/`, `results/curves/`, `results/scaling/` and `results/tsne-approx/` (copy of `results-tsne750/` on hartmut: manifolds-rs BH / qd / FFT, own kNN vs RINND, 2026-11-17) (README figures link there).
 - The scaling run (2026-11-17, hartmut, `results-scaling/` there and locally) is summarised in the README; `results-scaling-fast/` holds the aborted fast-schedule attempt.
 - Never `pkill -f` over ssh: the pattern matches the ssh command itself. Kill by PID.

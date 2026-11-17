@@ -62,6 +62,26 @@ Caveats:
 - `jinaclip-512-1m` (999,500 × 512, L2-normalised) is a local file on the benchmark host, most likely
   jina-clip-v2 caption embeddings; its exact provenance is unconfirmed (`DRBENCH_JINACLIP_1M` sets the path).
 
+### t-SNE repulsion: Barnes-Hut, qd, FFT
+
+manifolds-rs t-SNE with three repulsion approximations: Barnes-Hut and FFT with their own IVF kNN,
+all three with the shared RINND graph (k = 90). `dbpedia-512-100k`, 3 seeds, 36 threads, 750 iterations; fit time
+includes the graph build. Full table: [`results/tsne-approx/REPORT.md`](results/tsne-approx/REPORT.md).
+
+| method | local | global | fit time | peak RAM |
+|---|---|---|---|---|
+| mrs-tsne-bh | **0.9856** | 0.269 | 44 s | 1.1 GB |
+| mrs-tsne-fft | 0.9851 | 0.271 | 24 s | 1.2 GB |
+| mrs-tsne-bh-rinnd-default | 0.9826 | **0.291** | 33 s | 1.3 GB |
+| mrs-tsne-fft-rinnd-default | 0.9823 | 0.284 | 21 s | 1.4 GB |
+| mrs-tsne-qd-rinnd-default | 0.9786 | 0.286 | 17 s | 1.4 GB |
+
+- **Barnes-Hut on the RINND graph keeps the most global structure** of these runs, with the same
+  local score as FFT on that graph, at 1.5× FFT's time.
+- **qd (qdtsne's depth-capped Barnes-Hut) is not worth it:** no faster than FFT on the same graph
+  (13.4 vs 12.4 s with the fast graph), and 0.003–0.004 worse locally.
+- With manifolds-rs's own kNN, local scores are higher and global lower than with the RINND graph.
+
 Earlier results on `dbpedia-512-100k` (library defaults, epoch-budget curves, kNN backends):
 [`results/REPORT.md`](results/REPORT.md), [`results/curves/CURVES.md`](results/curves/CURVES.md)
 and [#1](../../issues/1).
@@ -80,7 +100,7 @@ and [#1](../../issues/1).
 |---|---|---|
 | `pca` | scikit-learn | Python |
 | `opentsne-fft` | openTSNE | Python / C++ |
-| `mrs-tsne-bh`, `mrs-tsne-fft` | manifolds-rs | Rust (PyPI bindings) |
+| `mrs-tsne-bh`, `mrs-tsne-fft`, `mrs-tsne-qd` (RINND variants only; qdtsne's depth-capped Barnes-Hut) | manifolds-rs | Rust (PyPI bindings) |
 | `umap-learn` (0.6 pipeline), `umap-learn-legacy` (0.5 pipeline) | umap-learn | Python / numba |
 | `mrs-umap` | manifolds-rs | Rust |
 | `ncvis` | ncvis | C++ |

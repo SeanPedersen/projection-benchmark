@@ -20,6 +20,12 @@ results/scaling/*
 !results/scaling/runs.jsonl
 !results/scaling/metrics.jsonl
 !results/scaling/figures/
+results/tsne-approx/*
+!results/tsne-approx/
+!results/tsne-approx/REPORT.md
+!results/tsne-approx/runs.jsonl
+!results/tsne-approx/metrics.jsonl
+!results/tsne-approx/figures/
 results-*/
 target/
 .pytest_cache/
