@@ -204,18 +204,25 @@ def short_name(algorithm: str) -> str:
     return algorithm.removesuffix("-rinnd-default").removesuffix("-rinnd-fast")
 
 
-# Label candidates around a point: (dx, dy) in points, horizontal and vertical alignment.
+# Label candidates around a point: unit direction, horizontal and vertical alignment. Each is
+# tried at growing distances; beyond the first a leader line joins label and point.
 LABEL_GAP_PT = 7
-LABEL_CANDIDATES = (
-    ((LABEL_GAP_PT, 0), "left", "center"),
-    ((-LABEL_GAP_PT, 0), "right", "center"),
-    ((0, LABEL_GAP_PT), "center", "bottom"),
-    ((0, -LABEL_GAP_PT), "center", "top"),
-    ((LABEL_GAP_PT, LABEL_GAP_PT), "left", "bottom"),
-    ((LABEL_GAP_PT, -LABEL_GAP_PT), "left", "top"),
-    ((-LABEL_GAP_PT, LABEL_GAP_PT), "right", "bottom"),
-    ((-LABEL_GAP_PT, -LABEL_GAP_PT), "right", "top"),
+LABEL_DIRECTIONS = (
+    ((1, 0), "left", "center"),
+    ((-1, 0), "right", "center"),
+    ((0, 1), "center", "bottom"),
+    ((0, -1), "center", "top"),
+    ((1, 1), "left", "bottom"),
+    ((1, -1), "left", "top"),
+    ((-1, 1), "right", "bottom"),
+    ((-1, -1), "right", "top"),
 )
+LABEL_DISTANCES = (1, 2.5, 4, 6)  # multiples of LABEL_GAP_PT
+LABEL_CANDIDATES = tuple(
+    ((dx * LABEL_GAP_PT * reach, dy * LABEL_GAP_PT * reach), ha, va, reach)
+    for reach in LABEL_DISTANCES for (dx, dy), ha, va in LABEL_DIRECTIONS
+)
+LEADER_PENALTY_PX2 = 40.0  # cost per distance step, so a label moves out only to clear overlap
 LABEL_CLEARANCE_PX = 6  # minimum free space around every label
 MARKER_HALF_PX = 9
 
@@ -226,28 +233,45 @@ def overlap_area(a, b) -> float:
     return max(width, 0.0) * max(height, 0.0)
 
 
+def box_center(box) -> np.ndarray:
+    return np.array([(box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2])
+
+
 def place_labels(ax, labelled: list[tuple[str, float, float]]) -> None:
     """Direct labels: per point, the first candidate position whose padded text box is clear
-    of the other labels, the other points and the axes edge; else the least-overlapping one."""
+    of the other labels, the other points and the axes edge, and sits nearer its own point
+    than any other (unless a leader line joins them); else the least bad one. Labels moved out
+    get a leader line."""
+    from matplotlib.text import Text
     from matplotlib.transforms import Bbox
 
     renderer = ax.figure.canvas.get_renderer()
     frame = ax.get_window_extent(renderer)
-    markers = {}
-    for name, x, y in labelled:
-        px, py = ax.transData.transform((x, y))
-        markers[name] = Bbox.from_extents(px - MARKER_HALF_PX, py - MARKER_HALF_PX,
-                                          px + MARKER_HALF_PX, py + MARKER_HALF_PX)
+    centers = {name: np.array(ax.transData.transform((x, y))) for name, x, y in labelled}
+    markers = {name: Bbox.from_extents(*(c - MARKER_HALF_PX), *(c + MARKER_HALF_PX))
+               for name, c in centers.items()}
     placed = []
     for name, x, y in sorted(labelled, key=lambda item: -item[2]):
         obstacles = placed + [box for other, box in markers.items() if other != name]
+        others = [c for other, c in centers.items() if other != name]
         best, best_cost = None, np.inf
-        for offset, ha, va in LABEL_CANDIDATES:
+        for offset, ha, va, reach in LABEL_CANDIDATES:
+            leader = ({"arrowstyle": "-", "color": FRONTIER, "linewidth": 0.7, "shrinkA": 2,
+                       "shrinkB": MARKER_HALF_PX * 0.6} if reach > 1 else None)
             text = ax.annotate(name, (x, y), textcoords="offset points", xytext=offset, ha=ha,
-                               va=va, fontsize=9, color=TEXT_PRIMARY)
-            box = text.get_window_extent(renderer).expanded(1, 1).padded(LABEL_CLEARANCE_PX)
+                               va=va, fontsize=9, color=TEXT_PRIMARY, arrowprops=leader)
+            # Text extent only (Annotation.get_window_extent would include the leader line);
+            # update_positions first, since Text's extent alone ignores the annotation offset.
+            text.update_positions(renderer)
+            box = Text.get_window_extent(text, renderer).expanded(1, 1).padded(LABEL_CLEARANCE_PX)
             outside = box.width * box.height - overlap_area(box, frame)
-            cost = outside + sum(overlap_area(box, other) for other in obstacles)
+            center = box_center(box)
+            # Without a leader line, a label nearer another point than its own reads as that
+            # point's label.
+            misleading = reach == 1 and any(
+                np.linalg.norm(center - c) < np.linalg.norm(center - centers[name]) for c in others)
+            cost = (outside + sum(overlap_area(box, other) for other in obstacles)
+                    + misleading * box.width * box.height + LEADER_PENALTY_PX2 * (reach - 1))
             if cost < best_cost:
                 if best is not None:
                     best[0].remove()
@@ -259,60 +283,66 @@ def place_labels(ax, labelled: list[tuple[str, float, float]]) -> None:
         placed.append(best[1])
 
 
-ZOOM_LOCAL_RANGE = 0.06  # zoom panel: methods within this much of the best local score
-ZOOM_MARGIN = 0.25  # of the zoomed points' span, on every side
-ZOOM_MIN_SPAN = (0.02, 0.01)  # (global, local), so a tight cluster is not magnified into noise
+LOCAL_OUTLIER_GAP = 0.1  # a lowest point this far below the next one is pinned to the bottom edge
+Y_MARGIN = 0.15  # of the local span, above and below the data
+OUTLIER_ROW = 0.1  # extra room below the data for pinned points, as a share of the local span
 
 
-def zoom_limits(cluster: list) -> tuple[tuple[float, float], tuple[float, float]]:
-    limits = []
-    for field, min_span in zip(("global", "local"), ZOOM_MIN_SPAN):
-        values = [p.mean[field] for p in cluster]
-        low, high = min(values), max(values)
-        pad = max(high - low, min_span) * ZOOM_MARGIN
-        limits.append((low - pad, high + pad))
-    return limits[0], limits[1]
+def local_outliers(points) -> set[tuple[str, int]]:
+    """(algorithm, n) of points whose local score lies more than LOCAL_OUTLIER_GAP below every
+    other point at that N (PCA here). Drawing them in place would squeeze all other methods into
+    a thin band, so they are pinned to the bottom edge and labelled with their value."""
+    outliers = set()
+    for n in {p.n for p in points}:
+        ranked = sorted((p for p in points if p.n == n), key=lambda p: p.mean["local"])
+        if len(ranked) > 1 and ranked[1].mean["local"] - ranked[0].mean["local"] > LOCAL_OUTLIER_GAP:
+            outliers.add((ranked[0].algorithm, n))
+    return outliers
 
 
 def plot_quality_map(points, dataset: str, path: Path) -> None:
-    """Local vs global score (mean over seeds) per algorithm, one row per N, each point labelled
-    directly. Left: all methods; right: a zoom on the methods within `ZOOM_LOCAL_RANGE` of the
-    best local score, where the competitive methods crowd together. Up and right is better."""
+    """Local vs global score (mean over seeds) per algorithm, one panel per N stacked
+    vertically, each point labelled directly. Up and right is better on both axes. Local-score
+    outliers (PCA) sit on a cut-off row at the bottom with their value in the label."""
     names = sorted({p.algorithm for p in points})
     colors = algorithm_colors(names)
     markers = {p.algorithm: LIBRARY_MARKERS.get(p.library, "o") for p in points}
     sizes = sorted({p.n for p in points})
-    fig, axes = plt.subplots(len(sizes), 2, figsize=(14, 4.6 * len(sizes)), facecolor=SURFACE,
-                             squeeze=False)
-    clusters = {}
-    for (overview, zoom), n in zip(axes, sizes):
-        at_n = [p for p in points if p.n == n]
-        best_local = max(p.mean["local"] for p in at_n)
-        clusters[n] = [p for p in at_n if p.mean["local"] >= best_local - ZOOM_LOCAL_RANGE]
-        for ax, shown in ((overview, at_n), (zoom, clusters[n])):
-            style_axes(ax)
-            for p in shown:
-                ax.scatter(p.mean["global"], p.mean["local"], s=MARKER_SIZE * 1.6,
-                           color=colors[p.algorithm], marker=markers[p.algorithm],
-                           edgecolors=SURFACE, linewidths=1.5, zorder=3)
-            ax.set_ylabel("Local (trustworthiness) →", color=TEXT_SECONDARY, fontsize=9)
-            ax.set_xlabel("Global (random-pair Spearman ρ) →", color=TEXT_SECONDARY, fontsize=9)
-        overview.set_title(f"N = {n:,}: all methods", color=TEXT_PRIMARY, fontsize=10, loc="left")
-        zoom.set_title(f"N = {n:,}: zoom on the top methods", color=TEXT_PRIMARY, fontsize=10,
-                       loc="left")
-        overview.margins(x=0.25, y=0.12)  # room for labels on every side of the outermost points
-        (x0, x1), (y0, y1) = zoom_limits(clusters[n])
-        zoom.set_xlim(x0, x1)
-        zoom.set_ylim(y0, y1)
-        overview.add_patch(plt.Rectangle((x0, y0), x1 - x0, y1 - y0, fill=False, linestyle="--",
-                                         edgecolor=FRONTIER, linewidth=1, zorder=2))
+    outliers = local_outliers(points)
+    inliers = [p.mean["local"] for p in points if (p.algorithm, p.n) not in outliers]
+    low, high = min(inliers), max(inliers)
+    span = high - low
+    pinned_y = low - (Y_MARGIN + OUTLIER_ROW / 2) * span
+    cut_y = low - Y_MARGIN * span
+    fig, axes = plt.subplots(len(sizes), 1, figsize=(8, 5.2 * len(sizes)), facecolor=SURFACE,
+                             sharex=True, sharey=True)
+    labelled: dict[int, list[tuple[str, float, float]]] = {}
+    for ax, n in zip(np.atleast_1d(axes), sizes):
+        style_axes(ax)
+        labelled[n] = []
+        for p in (p for p in points if p.n == n):
+            pinned = (p.algorithm, n) in outliers
+            y = pinned_y if pinned else p.mean["local"]
+            ax.scatter(p.mean["global"], y, s=MARKER_SIZE * 1.6, color=colors[p.algorithm],
+                       marker=markers[p.algorithm], edgecolors=SURFACE, linewidths=1.5, zorder=3)
+            label = short_name(p.algorithm)
+            labelled[n].append((f"{label} (local {p.mean['local']:.2f})" if pinned else label,
+                                p.mean["global"], y))
+        if outliers:
+            ax.axhline(cut_y, color=FRONTIER, linewidth=0.8, linestyle=(0, (4, 3)), zorder=1)
+        ax.set_title(f"N = {n:,}", color=TEXT_PRIMARY, fontsize=10, loc="left")
+        ax.set_ylabel("Local (trustworthiness) →", color=TEXT_SECONDARY, fontsize=9)
+        ax.set_xlabel("Global (random-pair Spearman ρ) →", color=TEXT_SECONDARY, fontsize=9)
+        ax.tick_params(labelbottom=True)
+        ax.margins(x=0.25)  # room for labels on either side of the outermost points
+    np.atleast_1d(axes)[0].set_ylim(low - (Y_MARGIN + OUTLIER_ROW) * span if outliers
+                                    else low - Y_MARGIN * span, high + Y_MARGIN * span)
+    for ax in np.atleast_1d(axes):
+        ax.set_yticks([t for t in ax.get_yticks() if t >= cut_y or not outliers])
     fig.suptitle(f"Projection quality — {dataset} (mean over 3 seeds, up and right is better)",
                  color=TEXT_PRIMARY, fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.98))
-    for (overview, zoom), n in zip(axes, sizes):
-        place_labels(overview, [(short_name(p.algorithm), p.mean["global"], p.mean["local"])
-                                for p in points if p.n == n])
-        place_labels(zoom, [(short_name(p.algorithm), p.mean["global"], p.mean["local"])
-                            for p in clusters[n]])
+    for ax, n in zip(np.atleast_1d(axes), sizes):
+        place_labels(ax, labelled[n])
     fig.savefig(path, dpi=DPI, facecolor=SURFACE)
     plt.close(fig)

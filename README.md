@@ -23,7 +23,7 @@ The steps resume where they left off: finished runs and evaluations are skipped.
 
 ## Results: projection quality vs N
 
-Ten methods, each with its best kNN setup (a shared [RINND](https://pypi.org/project/rinnd/)
+Nine methods, each with its best kNN setup (a shared [RINND](https://pypi.org/project/rinnd/)
 graph, default parameters), on `jinaclip-512-1m` subsampled to N = 10k, 100k and 512k.
 3 seeds, 36 threads (i9-7980XE). Tables per N: [`results/scaling/SCALING.md`](results/scaling/SCALING.md).
 
@@ -31,27 +31,26 @@ graph, default parameters), on `jinaclip-512-1m` subsampled to N = 10k, 100k and
 
 | method | combined 10k / 100k / 512k | local @512k | global @512k | fit time @512k | peak RAM @512k |
 |---|---|---|---|---|---|
-| mrs-tsne-fft | 0.76 / **0.91** / **0.86** | 0.968 | 0.188 | 73 s | 5.6 GB |
-| [ncvis-plus](https://github.com/SeanPedersen/ncvis-plus)-n20 | 0.77 / 0.78 / 0.81 | 0.962 | 0.173 | 32 s | 1.8 GB |
+| mrs-tsne-fft | 0.77 / **0.91** / **0.86** | 0.968 | 0.188 | 73 s | 5.6 GB |
 | [ncvis-plus](https://github.com/SeanPedersen/ncvis-plus) | 0.77 / 0.77 / 0.80 | 0.955 | 0.174 | 20 s | 1.8 GB |
-| opentsne-fft | 0.77 / 0.87 / 0.80 | **0.971** | 0.168 | 242 s | 4.2 GB |
-| mrs-dreams-fft | **0.88** / 0.77 / 0.78 | 0.939 | 0.176 | 75 s | 5.4 GB |
-| umap-learn | 0.47 / 0.49 / 0.51 | 0.889 | 0.114 | 43 s | 2.3 GB |
+| opentsne-fft | 0.78 / 0.87 / 0.80 | **0.971** | 0.168 | 242 s | 4.2 GB |
+| mrs-dreams-fft | **0.89** / 0.77 / 0.78 | 0.939 | 0.176 | 75 s | 5.4 GB |
+| umap-learn | 0.48 / 0.49 / 0.51 | 0.889 | 0.114 | 43 s | 2.3 GB |
 | pca | 0.50 / 0.50 / 0.50 | 0.644 | **0.234** | 1.4 s | 1.7 GB |
-| ncvis | 0.56 / 0.52 / 0.43 | 0.928 | 0.067 | 23 s | 1.8 GB |
+| ncvis | 0.57 / 0.52 / 0.43 | 0.928 | 0.067 | 23 s | 1.8 GB |
 | mrs-umap | 0.39 / 0.42 / 0.40 | 0.855 | 0.093 | 18 s | 1.8 GB |
 | mrs-pacmap | 0.31 / 0.30 / 0.38 | 0.844 | 0.092 | 120 s | 8.6 GB |
 
 **local** = mean trustworthiness (k = 5, 15, 30); **global** = Spearman ρ of 1M random pairs.
-**combined** = mean of local and global, each min-max scaled across these ten methods at that N
+**combined** = mean of local and global, each min-max scaled across these nine methods at that N
 (1 = best on both). It is relative: it ranks methods within one N, not across N. Seed sd ≤ 0.004
 local, ≤ 0.027 global.
 
 - **t-SNE is the best at both local and global structure, at 100k and 512k.** manifolds-rs
   t-SNE matches openTSNE's local score, keeps more global structure, and is 3–15× faster.
 - **NCVis+ comes closest to t-SNE at a fraction of the cost.** NCVis+ is NCVis with PCA init,
-  retuned defaults and a faster kernel. At 512k it trails manifolds-rs t-SNE by 0.006–0.013
-  local and 0.014 global, at 0.27–0.44× the time and a third of the memory. Stock NCVis falls
+  retuned defaults and a faster kernel. At 512k it trails manifolds-rs t-SNE by 0.013 local
+  and 0.014 global, at 0.27× the time and a third of the memory. Stock NCVis falls
   below PCA in combined score at 512k (global ρ 0.067).
 - **DREAMS (t-SNE pulled towards PCA) only pays off at 10k.** There it has the best combined
   score: global 0.244 against t-SNE's 0.192, for 0.011 less local. At 100k and 512k it is below
@@ -62,8 +61,8 @@ local, ≤ 0.027 global.
 Caveats:
 - kNN graphs differ by method: k = 15 (UMAP, NCVis, NCVis+), 60 (PaCMAP), 90 (t-SNE, DREAMS). The
   graph's build time and memory are charged to every run that uses it.
-- NCVis+ runs its own defaults (`min_dist` 0.001, 10 or 20 negatives per edge); the other methods
-  use the shared min_dist 0.1.
+- NCVis+ runs its own defaults (`min_dist` 0.001, 10 negatives per edge); the other methods use
+  the shared min_dist 0.1.
 - Trustworthiness depends on N, so compare methods within one N. At 512k it is estimated on 10k
   fixed anchor points (ranks exact over all N); at 10k and 100k every point is scored.
 - `@100000` ⊂ `@512000`, but `@10000` is an independent draw.
@@ -118,7 +117,7 @@ and [#1](../../issues/1).
 | `ncvis-hq`: HNSW M=16, efC=200, ef=64 (recall@15 ≈0.99) | ncvis (patched) | C++ |
 | `mrs-pacmap` | manifolds-rs | Rust |
 | `mrs-dreams-fft-rinnd-default`, `mrs-dreams-bh-rinnd-default`: DREAMS (t-SNE pulled towards the PCA layout) | manifolds-rs | Rust |
-| `ncvis-plus` (own RINND graph), `ncvis-plus-rinnd-default`, `ncvis-plus-n20-rinnd-default` (20 negatives per edge): [NCVis+](https://github.com/SeanPedersen/ncvis-plus), NCVis with PCA init, retuned defaults (incl. `min_dist` 0.001) and a faster kernel | ncvis-plus | C++ |
+| `ncvis-plus` (own RINND graph), `ncvis-plus-rinnd-default`, `ncvis-plus-n20-rinnd-default` (20 negatives per edge, not in the scaling report): [NCVis+](https://github.com/SeanPedersen/ncvis-plus), NCVis with PCA init, retuned defaults (incl. `min_dist` 0.001) and a faster kernel | ncvis-plus | C++ |
 | kNN-backend variants: `umap-learn-rinnd`, `opentsne-fft-nndescent`/`-exact`, `mrs-tsne-fft-nndescent`/`-hnsw` | as above | |
 | `-rinnd-default` / `-rinnd-fast` variants of `opentsne-fft`, `mrs-tsne-fft`, `mrs-tsne-bh`, `mrs-tsne-qd`, `umap-learn`, `mrs-umap`, `mrs-pacmap`, `ncvis` (shared RINND graph, default or tuned-fast schedule; NCVis via a patch) | as above + RINND (Rust) | |
 
