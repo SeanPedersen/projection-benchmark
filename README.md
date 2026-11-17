@@ -32,7 +32,7 @@ graph, default parameters), on `jinaclip-512-1m` subsampled to N = 10k, 100k and
 | method | combined 10k / 100k / 512k | local @512k | global @512k | fit time @512k | peak RAM @512k |
 |---|---|---|---|---|---|
 | mrs-tsne-fft | 0.77 / **0.91** / **0.86** | 0.968 | 0.188 | 73 s | 5.6 GB |
-| [ncvis-plus](https://github.com/SeanPedersen/ncvis-plus) | 0.77 / 0.77 / 0.80 | 0.955 | 0.174 | 20 s | 1.8 GB |
+| [ncvis-plus](https://github.com/SeanPedersen/ncvis-plus) | 0.78 / 0.76 / 0.79 | 0.954 | 0.173 | 16.5 s | 1.8 GB |
 | opentsne-fft | 0.78 / 0.87 / 0.80 | **0.971** | 0.168 | 242 s | 4.2 GB |
 | mrs-dreams-fft | **0.89** / 0.77 / 0.78 | 0.939 | 0.176 | 75 s | 5.4 GB |
 | umap-learn | 0.48 / 0.49 / 0.51 | 0.889 | 0.114 | 43 s | 2.3 GB |
@@ -49,8 +49,8 @@ local, ≤ 0.027 global.
 - **t-SNE is the best at both local and global structure, at 100k and 512k.** manifolds-rs
   t-SNE matches openTSNE's local score, keeps more global structure, and is 3–15× faster.
 - **NCVis+ comes closest to t-SNE at a fraction of the cost.** NCVis+ is NCVis with PCA init,
-  retuned defaults and a faster kernel. At 512k it trails manifolds-rs t-SNE by 0.013 local
-  and 0.014 global, at 0.27× the time and a third of the memory. Stock NCVis falls
+  retuned defaults and a faster kernel. At 512k it trails manifolds-rs t-SNE by 0.014 local
+  and 0.015 global, at 0.23× the time and a third of the memory. Stock NCVis falls
   below PCA in combined score at 512k (global ρ 0.067).
 - **DREAMS (t-SNE pulled towards PCA) only pays off at 10k.** There it has the best combined
   score: global 0.244 against t-SNE's 0.192, for 0.011 less local. At 100k and 512k it is below
