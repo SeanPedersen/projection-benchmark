@@ -275,10 +275,9 @@ def plot_quality_map(points, dataset: str, path: Path) -> None:
                        edgecolors=SURFACE, linewidths=1.5, zorder=3)
         ax.set_title(f"N = {n:,}", color=TEXT_PRIMARY, fontsize=10, loc="left")
         ax.set_ylabel("Local (trustworthiness) →", color=TEXT_SECONDARY, fontsize=9)
+        ax.set_xlabel("Global (random-pair Spearman ρ) →", color=TEXT_SECONDARY, fontsize=9)
         ax.tick_params(labelbottom=True)
         ax.margins(x=0.25, y=0.12)  # room for labels on every side of the outermost points
-    np.atleast_1d(axes)[-1].set_xlabel("Global (random-pair Spearman ρ) →",
-                                       color=TEXT_SECONDARY, fontsize=9)
     fig.suptitle(f"Projection quality — {dataset} (mean over 3 seeds, up and right is better)",
                  color=TEXT_PRIMARY, fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.98))
