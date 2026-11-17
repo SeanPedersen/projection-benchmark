@@ -3,6 +3,8 @@ swap only the kNN backend. The `-rinnd-fast` / `-rinnd-default` variants take th
 graph (`knn_graph.py`, k = 3 x perplexity, fast or default schedule) as a precomputed kNN graph.
 manifolds-rs `qd` is qdtsne's quick-and-dirty Barnes-Hut: tree depth capped (library default
 `TsneOptim.max_depth`), repulsion computed once per leaf.
+`mrs-dreams-*` is manifolds-rs DREAMS: the same t-SNE with a quadratic pull towards the PCA
+layout of the data (library default `lambda_` 0.15), on the same schedule and graph.
 
 Both libraries run the same schedule (`params.tsne_schedule`): 750 iterations, of which the first
 250 use early exaggeration 12 (openTSNE's defaults; manifolds-rs would run 1000). Still different:
@@ -74,6 +76,7 @@ def _manifolds_tsne(
     approx: str,
     ann: str,
     graph: str | None = None,
+    dreams: bool = False,
 ) -> np.ndarray:
     import manifolds_rs as mf
 
@@ -83,7 +86,7 @@ def _manifolds_tsne(
     if graph is not None:
         knn_indices, knn_distances = knn_graph.rinnd_graph(X, TSNE_NEIGHBORS, n_threads, graph)
         knn = {"knn_indices": knn_indices, "knn_distances": knn_distances}
-    model = mf.TSNE(
+    model = (mf.DREAMS if dreams else mf.TSNE)(
         n_components=2,
         perplexity=PERPLEXITY,
         n_epochs=total_iterations,
@@ -103,8 +106,9 @@ manifolds_fft_nndescent = partial(_manifolds_tsne, approx="fft", ann="nndescent"
 manifolds_fft_hnsw = partial(_manifolds_tsne, approx="fft", ann="hnsw")
 
 
-def _manifolds_rinnd(approx: str, graph: str):
-    return partial(_manifolds_tsne, approx=approx, ann=MANIFOLDS_TSNE_DEFAULT_ANN, graph=graph)
+def _manifolds_rinnd(approx: str, graph: str, dreams: bool = False):
+    return partial(_manifolds_tsne, approx=approx, ann=MANIFOLDS_TSNE_DEFAULT_ANN, graph=graph,
+                   dreams=dreams)
 
 
 manifolds_fft_rinnd_fast = _manifolds_rinnd("fft", knn_graph.FAST)
@@ -113,3 +117,5 @@ manifolds_bh_rinnd_fast = _manifolds_rinnd("barnes_hut", knn_graph.FAST)
 manifolds_bh_rinnd_default = _manifolds_rinnd("barnes_hut", knn_graph.DEFAULT)
 manifolds_qd_rinnd_fast = _manifolds_rinnd("qd", knn_graph.FAST)
 manifolds_qd_rinnd_default = _manifolds_rinnd("qd", knn_graph.DEFAULT)
+dreams_fft_rinnd_default = _manifolds_rinnd("fft", knn_graph.DEFAULT, dreams=True)
+dreams_bh_rinnd_default = _manifolds_rinnd("barnes_hut", knn_graph.DEFAULT, dreams=True)

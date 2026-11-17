@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from drbench.algorithms import ncvis, pca, tsne, umap
+from drbench.algorithms import ncvis, ncvis_plus, pca, tsne, umap
 from drbench.algorithms.params import TSNE_ITERATIONS, scaled_epochs
 
 FitTransform = Callable[[np.ndarray, int, int, float], np.ndarray]
@@ -74,6 +74,10 @@ REGISTRY: dict[str, Algorithm] = {
                   tsne.manifolds_qd_rinnd_fast, TSNE_ITERATIONS),
         Algorithm("mrs-tsne-qd-rinnd-default", "t-sne", "manifolds-rs", "rust", "pca",
                   tsne.manifolds_qd_rinnd_default, TSNE_ITERATIONS),
+        Algorithm("mrs-dreams-fft-rinnd-default", "t-sne", "manifolds-rs", "rust", "pca",
+                  tsne.dreams_fft_rinnd_default, TSNE_ITERATIONS),
+        Algorithm("mrs-dreams-bh-rinnd-default", "t-sne", "manifolds-rs", "rust", "pca",
+                  tsne.dreams_bh_rinnd_default, TSNE_ITERATIONS),
         Algorithm("umap-learn", "umap", "umap-learn", "python/numba", "recursive", umap.umap_learn,
                   umap.UMAP_LEARN_EPOCHS_LARGE),
         Algorithm("umap-learn-rinnd", "umap", "umap-learn", "python/rust", "recursive",
@@ -105,6 +109,12 @@ REGISTRY: dict[str, Algorithm] = {
                   ncvis.ncvis_rinnd_default, ncvis.NCVIS_EPOCHS),
         Algorithm("ncvis-hq", "ncvis", "ncvis", "c++", "random", ncvis.ncvis_hq,
                   ncvis.NCVIS_EPOCHS),
+        Algorithm("ncvis-plus", "ncvis", "ncvis-plus", "c++", "pca", ncvis_plus.ncvis_plus,
+                  ncvis_plus.NCVIS_PLUS_EPOCHS),
+        Algorithm("ncvis-plus-rinnd-default", "ncvis", "ncvis-plus", "c++", "pca",
+                  ncvis_plus.ncvis_plus_rinnd_default, ncvis_plus.NCVIS_PLUS_EPOCHS),
+        Algorithm("ncvis-plus-n20-rinnd-default", "ncvis", "ncvis-plus", "c++", "pca",
+                  ncvis_plus.ncvis_plus_n20_rinnd_default, ncvis_plus.NCVIS_PLUS_EPOCHS),
     )
 }
 

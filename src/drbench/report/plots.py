@@ -23,6 +23,7 @@ FRONTIER = "#9a9893"
 CATEGORICAL = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948")
 FAMILY_ORDER = ("t-sne", "umap", "ncvis", "pacmap", "pca")
 LIBRARY_MARKERS = {"openTSNE": "o", "manifolds-rs": "s", "umap-learn": "^", "ncvis": "D",
+                   "ncvis-plus": "v",
                    "scikit-learn": "P"}
 MARKER_SIZE = 64
 LABEL_ABOVE = (6, 5)
@@ -258,31 +259,60 @@ def place_labels(ax, labelled: list[tuple[str, float, float]]) -> None:
         placed.append(best[1])
 
 
+ZOOM_LOCAL_RANGE = 0.06  # zoom panel: methods within this much of the best local score
+ZOOM_MARGIN = 0.25  # of the zoomed points' span, on every side
+ZOOM_MIN_SPAN = (0.02, 0.01)  # (global, local), so a tight cluster is not magnified into noise
+
+
+def zoom_limits(cluster: list) -> tuple[tuple[float, float], tuple[float, float]]:
+    limits = []
+    for field, min_span in zip(("global", "local"), ZOOM_MIN_SPAN):
+        values = [p.mean[field] for p in cluster]
+        low, high = min(values), max(values)
+        pad = max(high - low, min_span) * ZOOM_MARGIN
+        limits.append((low - pad, high + pad))
+    return limits[0], limits[1]
+
+
 def plot_quality_map(points, dataset: str, path: Path) -> None:
-    """Local vs global score (mean over seeds) per algorithm, one panel per N stacked
-    vertically, each point labelled directly. Up and right is better on both axes."""
+    """Local vs global score (mean over seeds) per algorithm, one row per N, each point labelled
+    directly. Left: all methods; right: a zoom on the methods within `ZOOM_LOCAL_RANGE` of the
+    best local score, where the competitive methods crowd together. Up and right is better."""
     names = sorted({p.algorithm for p in points})
     colors = algorithm_colors(names)
     markers = {p.algorithm: LIBRARY_MARKERS.get(p.library, "o") for p in points}
     sizes = sorted({p.n for p in points})
-    fig, axes = plt.subplots(len(sizes), 1, figsize=(8, 4.2 * len(sizes)), facecolor=SURFACE,
-                             sharex=True, sharey=True)
-    for ax, n in zip(np.atleast_1d(axes), sizes):
-        style_axes(ax)
-        for p in (p for p in points if p.n == n):
-            ax.scatter(p.mean["global"], p.mean["local"], s=MARKER_SIZE * 1.6,
-                       color=colors[p.algorithm], marker=markers[p.algorithm],
-                       edgecolors=SURFACE, linewidths=1.5, zorder=3)
-        ax.set_title(f"N = {n:,}", color=TEXT_PRIMARY, fontsize=10, loc="left")
-        ax.set_ylabel("Local (trustworthiness) →", color=TEXT_SECONDARY, fontsize=9)
-        ax.set_xlabel("Global (random-pair Spearman ρ) →", color=TEXT_SECONDARY, fontsize=9)
-        ax.tick_params(labelbottom=True)
-        ax.margins(x=0.25, y=0.12)  # room for labels on every side of the outermost points
+    fig, axes = plt.subplots(len(sizes), 2, figsize=(14, 4.6 * len(sizes)), facecolor=SURFACE,
+                             squeeze=False)
+    clusters = {}
+    for (overview, zoom), n in zip(axes, sizes):
+        at_n = [p for p in points if p.n == n]
+        best_local = max(p.mean["local"] for p in at_n)
+        clusters[n] = [p for p in at_n if p.mean["local"] >= best_local - ZOOM_LOCAL_RANGE]
+        for ax, shown in ((overview, at_n), (zoom, clusters[n])):
+            style_axes(ax)
+            for p in shown:
+                ax.scatter(p.mean["global"], p.mean["local"], s=MARKER_SIZE * 1.6,
+                           color=colors[p.algorithm], marker=markers[p.algorithm],
+                           edgecolors=SURFACE, linewidths=1.5, zorder=3)
+            ax.set_ylabel("Local (trustworthiness) →", color=TEXT_SECONDARY, fontsize=9)
+            ax.set_xlabel("Global (random-pair Spearman ρ) →", color=TEXT_SECONDARY, fontsize=9)
+        overview.set_title(f"N = {n:,}: all methods", color=TEXT_PRIMARY, fontsize=10, loc="left")
+        zoom.set_title(f"N = {n:,}: zoom on the top methods", color=TEXT_PRIMARY, fontsize=10,
+                       loc="left")
+        overview.margins(x=0.25, y=0.12)  # room for labels on every side of the outermost points
+        (x0, x1), (y0, y1) = zoom_limits(clusters[n])
+        zoom.set_xlim(x0, x1)
+        zoom.set_ylim(y0, y1)
+        overview.add_patch(plt.Rectangle((x0, y0), x1 - x0, y1 - y0, fill=False, linestyle="--",
+                                         edgecolor=FRONTIER, linewidth=1, zorder=2))
     fig.suptitle(f"Projection quality — {dataset} (mean over 3 seeds, up and right is better)",
                  color=TEXT_PRIMARY, fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.98))
-    for ax, n in zip(np.atleast_1d(axes), sizes):
-        place_labels(ax, [(short_name(p.algorithm), p.mean["global"], p.mean["local"])
-                          for p in points if p.n == n])
+    for (overview, zoom), n in zip(axes, sizes):
+        place_labels(overview, [(short_name(p.algorithm), p.mean["global"], p.mean["local"])
+                                for p in points if p.n == n])
+        place_labels(zoom, [(short_name(p.algorithm), p.mean["global"], p.mean["local"])
+                            for p in clusters[n]])
     fig.savefig(path, dpi=DPI, facecolor=SURFACE)
     plt.close(fig)
