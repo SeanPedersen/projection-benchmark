@@ -88,7 +88,7 @@ and [#1](../../issues/1).
 | `ncvis-hq`: HNSW M=16, efC=200, ef=64 (recall@15 ≈0.99) | ncvis (patched) | C++ |
 | `mrs-pacmap` | manifolds-rs | Rust |
 | kNN-backend variants: `umap-learn-rinnd`, `opentsne-fft-nndescent`/`-exact`, `mrs-tsne-fft-nndescent`/`-hnsw` | as above | |
-| `-rinnd-default` / `-rinnd-fast` variants of `opentsne-fft`, `mrs-tsne-fft`, `umap-learn`, `mrs-umap`, `mrs-pacmap`, `ncvis` (shared RINND graph, default or tuned-fast schedule; NCVis via a patch) | as above + RINND (Rust) | |
+| `-rinnd-default` / `-rinnd-fast` variants of `opentsne-fft`, `mrs-tsne-fft`, `mrs-tsne-bh`, `mrs-tsne-qd`, `umap-learn`, `mrs-umap`, `mrs-pacmap`, `ncvis` (shared RINND graph, default or tuned-fast schedule; NCVis via a patch) | as above + RINND (Rust) | |
 
 Shared hyperparameters are aligned across implementations: perplexity 30, n_neighbors 15 and min_dist 0.1. Everything else stays at library defaults.
 

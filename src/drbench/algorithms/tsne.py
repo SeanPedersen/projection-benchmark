@@ -1,6 +1,8 @@
-"""t-SNE adapters: openTSNE (FFT) and manifolds-rs (Barnes-Hut and FFT), plus FFT variants that
+"""t-SNE adapters: openTSNE (FFT) and manifolds-rs (Barnes-Hut, qd and FFT), plus FFT variants that
 swap only the kNN backend. The `-rinnd-fast` / `-rinnd-default` variants take the shared RINND
 graph (`knn_graph.py`, k = 3 x perplexity, fast or default schedule) as a precomputed kNN graph.
+manifolds-rs `qd` is qdtsne's quick-and-dirty Barnes-Hut: tree depth capped (library default
+`TsneOptim.max_depth`), repulsion computed once per leaf.
 
 Both libraries run the same schedule (`params.tsne_schedule`): 750 iterations, of which the first
 250 use early exaggeration 12 (openTSNE's defaults; manifolds-rs would run 1000). Still different:
@@ -99,9 +101,15 @@ manifolds_bh = partial(_manifolds_tsne, approx="barnes_hut", ann=MANIFOLDS_TSNE_
 manifolds_fft = partial(_manifolds_tsne, approx="fft", ann=MANIFOLDS_TSNE_DEFAULT_ANN)
 manifolds_fft_nndescent = partial(_manifolds_tsne, approx="fft", ann="nndescent")
 manifolds_fft_hnsw = partial(_manifolds_tsne, approx="fft", ann="hnsw")
-manifolds_fft_rinnd_fast = partial(
-    _manifolds_tsne, approx="fft", ann=MANIFOLDS_TSNE_DEFAULT_ANN, graph=knn_graph.FAST
-)
-manifolds_fft_rinnd_default = partial(
-    _manifolds_tsne, approx="fft", ann=MANIFOLDS_TSNE_DEFAULT_ANN, graph=knn_graph.DEFAULT
-)
+
+
+def _manifolds_rinnd(approx: str, graph: str):
+    return partial(_manifolds_tsne, approx=approx, ann=MANIFOLDS_TSNE_DEFAULT_ANN, graph=graph)
+
+
+manifolds_fft_rinnd_fast = _manifolds_rinnd("fft", knn_graph.FAST)
+manifolds_fft_rinnd_default = _manifolds_rinnd("fft", knn_graph.DEFAULT)
+manifolds_bh_rinnd_fast = _manifolds_rinnd("barnes_hut", knn_graph.FAST)
+manifolds_bh_rinnd_default = _manifolds_rinnd("barnes_hut", knn_graph.DEFAULT)
+manifolds_qd_rinnd_fast = _manifolds_rinnd("qd", knn_graph.FAST)
+manifolds_qd_rinnd_default = _manifolds_rinnd("qd", knn_graph.DEFAULT)

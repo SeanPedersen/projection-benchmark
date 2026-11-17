@@ -22,6 +22,8 @@ algorithms = [
     # Shared RINND graph (algorithms/knn_graph.py) wherever a library accepts a precomputed one.
     "opentsne-fft-rinnd-fast",
     "mrs-tsne-fft-rinnd-fast",
+    "mrs-tsne-bh-rinnd-fast",
+    "mrs-tsne-qd-rinnd-fast",
     "umap-learn-rinnd-fast",
     "mrs-umap-rinnd-fast",
     "mrs-pacmap-rinnd-fast",
