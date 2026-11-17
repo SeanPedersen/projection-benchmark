@@ -191,3 +191,129 @@ def plot_curves(points: list[dict], dataset: str, path: Path) -> None:
                frameon=False, fontsize=8, labelcolor=TEXT_SECONDARY)
     fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor=SURFACE)
     plt.close(fig)
+
+
+# Scaling charts: one line per algorithm across N, log N axis, coloured per algorithm (slot =
+# position in the sorted name list, so a colour follows its algorithm across charts).
+SCALING_LABEL_GAP = 0.045  # minimum vertical gap between end labels, axes fraction
+SCALING_LABEL_DX = 8
+SCALING_QUALITY_PANELS = (
+    ("local", "Local (mean trustworthiness)"),
+    ("global", "Global (random-pair ρ)"),
+    ("triplet_acc", "Triplet accuracy"),
+)
+
+
+def algorithm_colors(names: list[str]) -> dict[str, str]:
+    return {name: CATEGORICAL[i % len(CATEGORICAL)] for i, name in enumerate(sorted(names))}
+
+
+def end_labels(ax, ends: list[tuple[str, float, float]]) -> None:
+    """Name labels right of each line's last point, nudged apart vertically so none overlap."""
+    to_axes = ax.transAxes.inverted().transform
+    placed = sorted(
+        ((name, x, y, to_axes(ax.transData.transform((x, y)))[1]) for name, x, y in ends),
+        key=lambda item: item[3],
+    )
+    floor = -np.inf
+    for name, x, y, y_axes in placed:
+        target = max(y_axes, floor + SCALING_LABEL_GAP)
+        floor = target
+        dy_points = (target - y_axes) * ax.bbox.height * 72 / ax.figure.dpi
+        ax.annotate(name, (x, y), textcoords="offset points", xytext=(SCALING_LABEL_DX, dy_points),
+                    va="center", fontsize=8, color=TEXT_PRIMARY)
+
+
+def scaling_series(points, name: str, field: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    line = sorted((p for p in points if p.algorithm == name), key=lambda p: p.n)
+    return (np.array([p.n for p in line], dtype=float), np.array([p.mean[field] for p in line]),
+            np.array([p.sd[field] for p in line]))
+
+
+def draw_scaling_lines(ax, points, names, field: str, colors: dict[str, str]) -> list:
+    ends = []
+    for name in names:
+        xs, ys, sds = scaling_series(points, name, field)
+        if not len(xs):
+            continue
+        library = next(p.library for p in points if p.algorithm == name)
+        ax.errorbar(xs, ys, yerr=sds, fmt="none", ecolor=colors[name], elinewidth=1, alpha=0.6)
+        ax.plot(xs, ys, color=colors[name], linewidth=2, marker=LIBRARY_MARKERS.get(library, "o"),
+                markersize=7, markeredgecolor=SURFACE, markeredgewidth=1.5, zorder=3)
+        ends.append((name, xs[-1], ys[-1]))
+    return ends
+
+
+def finish_scaling_figure(fig, axes, points, names, colors, title: str, path: Path,
+                          extra_handles=()) -> None:
+    sizes = sorted({p.n for p in points})
+    for ax in axes:
+        ax.set_xscale("log")
+        ax.set_xticks(sizes, [f"{n // 1000}k" for n in sizes])
+        ax.minorticks_off()
+        ax.set_xlabel("N (points, log)", color=TEXT_SECONDARY, fontsize=9)
+        ax.set_xlim(sizes[0] / 1.5, sizes[-1] * 4)  # room for end labels
+    handles = [plt.Line2D([], [], color=colors[name], linewidth=2,
+                          marker=LIBRARY_MARKERS.get(next(p.library for p in points
+                                                          if p.algorithm == name), "o"),
+                          label=name) for name in names]
+    handles += list(extra_handles)
+    fig.suptitle(title, color=TEXT_PRIMARY, fontsize=11)
+    fig.tight_layout()
+    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.0),
+               ncol=min(len(handles), 5), frameon=False, fontsize=8, labelcolor=TEXT_SECONDARY)
+    fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor=SURFACE)
+    plt.close(fig)
+
+
+def plot_scaling_time(points, names: list[str], dataset: str, path: Path) -> None:
+    """Fit time (solid) and the shared kNN graph's build time (dashed) vs N, log-log."""
+    colors = algorithm_colors(names)
+    fig, ax = plt.subplots(figsize=(9, 5.5), facecolor=SURFACE)
+    style_axes(ax)
+    ax.set_yscale("log")
+    ends = draw_scaling_lines(ax, points, names, "fit_s", colors)
+    for name in names:
+        xs, knn, _ = scaling_series(points, name, "knn_s")
+        if len(xs) and knn.max() > 0:
+            ax.plot(xs, knn, color=colors[name], linewidth=1.2, linestyle="--", alpha=0.8, zorder=2)
+    sizes = np.array(sorted({p.n for p in points}), dtype=float)
+    smallest_fit = min(p.mean["fit_s"] for p in points if p.n == sizes[0])
+    ax.plot(sizes, smallest_fit * sizes / sizes[0], color=FRONTIER, linewidth=1, linestyle=":",
+            zorder=1)
+    ax.set_ylabel("Seconds (log)", color=TEXT_SECONDARY, fontsize=9)
+    ax.autoscale_view()
+    end_labels(ax, ends)
+    extra = (plt.Line2D([], [], color=TEXT_SECONDARY, linewidth=2, label="fit (kNN included)"),
+             plt.Line2D([], [], color=TEXT_SECONDARY, linewidth=1.2, linestyle="--",
+                        label="kNN graph build"),
+             plt.Line2D([], [], color=FRONTIER, linewidth=1, linestyle=":", label="∝ N"))
+    finish_scaling_figure(fig, [ax], points, names, colors,
+                          f"Wall time vs N — {dataset} (mean over seeds)", path, extra)
+
+
+def plot_scaling_memory(points, names: list[str], dataset: str, path: Path) -> None:
+    colors = algorithm_colors(names)
+    fig, ax = plt.subplots(figsize=(9, 5.5), facecolor=SURFACE)
+    style_axes(ax)
+    ax.set_yscale("log")
+    ends = draw_scaling_lines(ax, points, names, "peak_rss_mb", colors)
+    ax.set_ylabel("Peak RSS (MB, log; includes interpreter and data)", color=TEXT_SECONDARY,
+                  fontsize=9)
+    ax.autoscale_view()
+    end_labels(ax, ends)
+    finish_scaling_figure(fig, [ax], points, names, colors,
+                          f"Peak memory vs N — {dataset} (mean over seeds)", path)
+
+
+def plot_scaling_quality(points, names: list[str], dataset: str, path: Path) -> None:
+    colors = algorithm_colors(names)
+    fig, axes = plt.subplots(1, len(SCALING_QUALITY_PANELS), figsize=(17, 5.5), facecolor=SURFACE)
+    for ax, (field, label) in zip(axes, SCALING_QUALITY_PANELS):
+        style_axes(ax)
+        ends = draw_scaling_lines(ax, points, names, field, colors)
+        ax.set_ylabel(label, color=TEXT_SECONDARY, fontsize=9)
+        ax.autoscale_view()
+        end_labels(ax, ends)
+    finish_scaling_figure(fig, axes, points, names, colors,
+                          f"Quality vs N — {dataset} (mean ± sd over seeds)", path)

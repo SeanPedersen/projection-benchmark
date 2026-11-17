@@ -34,7 +34,7 @@ def _ncvis(
     m: int = STOCK_M,
     ef_construction: int = STOCK_EF_CONSTRUCTION,
     ef_search: int | None = None,
-    shared_graph: bool = False,
+    graph: str | None = None,
 ) -> np.ndarray:
     from ncvis import NCVis
 
@@ -50,9 +50,9 @@ def _ncvis(
         n_init_epochs=scaled_epochs(NCVIS_INIT_EPOCHS, budget),
         random_seed=seed,
     )
-    if not shared_graph:
+    if graph is None:
         return model.fit_transform(X)
-    indices, distances = knn_graph.rinnd_graph(X, N_NEIGHBORS, n_threads)
+    indices, distances = knn_graph.rinnd_graph(X, N_NEIGHBORS, n_threads, graph)
     return model.fit_transform(X, knn_indices=indices, knn_distances=np.square(distances))
 
 
@@ -61,4 +61,5 @@ ncvis_ef64 = partial(_ncvis, ef_search=WIDE_EF_SEARCH)
 ncvis_hq = partial(
     _ncvis, m=DENSE_M, ef_construction=DENSE_EF_CONSTRUCTION, ef_search=WIDE_EF_SEARCH
 )
-ncvis_rinnd_fast = partial(_ncvis, shared_graph=True)
+ncvis_rinnd_fast = partial(_ncvis, graph=knn_graph.FAST)
+ncvis_rinnd_default = partial(_ncvis, graph=knn_graph.DEFAULT)

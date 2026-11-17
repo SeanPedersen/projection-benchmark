@@ -40,3 +40,10 @@ def test_reuse_charges_stored_build_cost(fresh_cache):
     assert knn_graph.charged_cost().build_s == pytest.approx(float(stored["build_s"]))
     assert knn_graph.charged_cost().extra_rss_kb == int(stored["extra_rss_kb"])
     assert knn_graph.charged_cost().knn_s == pytest.approx(2 * float(stored["build_s"]))
+
+
+def test_schedules_that_coincide_share_one_cached_graph(tmp_path):
+    fast, default = knn_graph.FAST, knn_graph.DEFAULT
+    assert knn_graph.graph_path(tmp_path, 15, 100, 4, fast) == knn_graph.graph_path(tmp_path, 15, 100, 4, default)
+    assert knn_graph.graph_path(tmp_path, 90, 100, 4, fast) != knn_graph.graph_path(tmp_path, 90, 100, 4, default)
+    assert knn_graph.schedule_for(90, default) == {}

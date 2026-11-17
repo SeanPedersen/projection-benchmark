@@ -4,7 +4,7 @@ Benchmark of dimensionality-reduction implementations: quality (local/global) vs
 It is all Python (3.12, uv). Rust and C++ libraries come in through their Python bindings.
 
 ## Commands
-- Run tests and every sweep on hartmut, not locally: `uv sync` and `uv run pytest` (55 tests; metric tests compare against sklearn to 1e-12)
+- Run tests and every sweep on hartmut, not locally: `uv sync` and `uv run pytest` (63 tests; metric tests compare against sklearn to 1e-12)
 - `uv run ruff check src tests`
 - `uv run drbench {prep,run,evaluate,report,all,curves,knn} [--subsample N --seeds 0,1 --algos a,b --results-dir DIR --timeout S --threads T]`
 - Config: `benchmark.toml`. CLI flags override `[run]`. `[curves]` configures the budget sweep, which writes to `results/curves/`. `[knn]` configures `drbench knn` (`--backends`, `--ks`, `--repeats` override), which writes `results/knn/knn.jsonl` and `KNN.md`.
@@ -18,6 +18,7 @@ It is all Python (3.12, uv). Rust and C++ libraries come in through their Python
   - Shared hyperparameters and `scaled_epochs` live in `params.py`, including the t-SNE schedule both libraries run (`tsne_schedule`: 750 iterations, the first 250 with early exaggeration 12; manifolds-rs would default to 1000). The learning rate still differs: openTSNE uses N/exaggeration per phase, manifolds-rs max(N/12, 200).
   - Variants that differ only in the kNN backend: `umap-learn` (PyNNDescent) vs `umap-learn-rinnd`; `opentsne-fft` (Annoy) vs `-nndescent` / `-exact`; `mrs-tsne-fft` (IVF) vs `-nndescent` / `-hnsw`.
   - `-rinnd-fast` variants (`opentsne-fft`, `mrs-tsne-fft`, `umap-learn`, `mrs-umap`, `mrs-pacmap`, `ncvis`) take a precomputed RINND graph from `knn_graph.py`: schedule per k (k=15 defaults, k=60/90 `max_candidates=20, n_iters=4`). Graphs are cached in `data/<spec>/graphs/` and shared across algorithms and seeds; a run that loads one is charged its stored build time (added to `fit_s`, also in `shared_knn_s`) and extra peak RSS. CPU time is not charged. Every run that uses a graph records its build time as `knn_s` (None otherwise), so layout time = `fit_s - knn_s`. The fast schedules were tuned at 100K; at 512K (jinaclip) recall drops to 0.87 (k=15, 60) and 0.82 (k=90).
+  - `-rinnd-default` variants of the same six use RINND's own parameters (`knn_graph.DEFAULT`); at k=15 that equals the fast schedule, so both share one cached graph file. Adapters take `graph: str | None` (None = the library's own kNN). The scaling run (`drbench scaling`) uses the default variants.
   - Graph layouts differ: manifolds-rs and openTSNE take it as is (euclidean, no self); umap-learn needs the point itself as first neighbour (`with_self`); NCVis gets squared distances.
 - `runner/`:
   - `orchestrator.py` spawns one `worker.py` process per run and handles timeouts and resume. A run whose recorded `epochs` no longer match the schedule is rerun; its old score is then ignored (`evaluate.current_scores`).
@@ -31,7 +32,7 @@ It is all Python (3.12, uv). Rust and C++ libraries come in through their Python
   - `local.py` has trustworthiness, continuity and recall.
   - `global_geometry.py` has the global scores: `global` = random-pair Spearman ρ (1M pairs) and `triplet_acc` (1M triplets). Both have measured sampling sd ≤ 0.001, below the seed spread. k-means scores were dropped as unstable (issue #2); k-means labels only colour the thumbnails.
   - `__init__.py` builds the cached per-dataset `reference.npz` (missing or resized parts are recomputed on load) and runs `evaluate()`. `METRICS_VERSION` is stored with each score; `evaluate` rescores records from older versions and reports only use current ones. Above `[metrics] anchors_above_n` points, local scores are estimated on `anchor_rows` fixed anchor points (ranks stay exact over all N) and the reference kNN is computed for the anchors only (`knn_rows` in `reference.npz`); a cached full-N kNN serves any anchor set. Curves always use anchors.
-- `report/`: `tables.py` aggregates; `plots.py` draws the Pareto charts, curves and thumbnails (dataviz palette); `__init__.py` writes `REPORT.md`; `curves.py` writes `CURVES.md`; `knn.py` writes `KNN.md`.
+- `report/`: `tables.py` aggregates; `plots.py` draws the Pareto charts, curves and thumbnails (dataviz palette); `__init__.py` writes `REPORT.md`; `curves.py` writes `CURVES.md`; `knn.py` writes `KNN.md`; `scaling.py` writes `SCALING.md` plus time/memory/quality-vs-N charts for one dataset at several `@N` sizes (`drbench scaling --datasets a@N1,a@N2 --algos ...`).
 
 ## Gotchas
 - `ncvis` is vendored in `vendor/ncvis`: the 1.5.13 sdist from 2023, patched with a `<size_t*>` cast so it cythonizes against NumPy 2. A second patch adds `ef_search` (HNSW query ef, 0 = stock), used by the `ncvis-ef64` and `ncvis-hq` variants. A third adds `fit_transform(X, knn_indices=, knn_distances=)` (C++ `fit_transform_knn`), which skips HNSW and embeds a given graph (`ncvis-rinnd-fast`). With stock settings, recall@15 is only ~0.85 on 512-d data. After editing it, rebuild with `uv sync --reinstall-package ncvis`.

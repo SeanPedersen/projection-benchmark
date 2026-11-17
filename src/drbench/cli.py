@@ -1,4 +1,4 @@
-"""Command-line entry point: `drbench {prep,run,evaluate,report,all,curves,knn}`."""
+"""Command-line entry point: `drbench {prep,run,evaluate,report,all,curves,knn,scaling}`."""
 
 import argparse
 from pathlib import Path
@@ -31,6 +31,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--retry-failed", action="store_true")
     commands.add_parser("evaluate", parents=[common], help="score finished runs")
     commands.add_parser("report", parents=[common], help="write summary.csv, plots, REPORT.md")
+    commands.add_parser(
+        "scaling", parents=[common], help="SCALING.md and charts across the --datasets sizes"
+    )
     everything = commands.add_parser("all", parents=[common], help="prep, run, evaluate, report")
     everything.add_argument("--retry-failed", action="store_true")
     curves = commands.add_parser(
@@ -95,6 +98,10 @@ def main() -> None:
     config = resolve_config(args)
     if args.command == "knn":
         run_knn_command(args, config)
+        return
+    if args.command == "scaling":
+        from drbench.report.scaling import write_scaling_report
+        write_scaling_report(config)
         return
     if args.command == "curves":
         run_curves_command(args, config)

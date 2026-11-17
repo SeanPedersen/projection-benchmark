@@ -1,6 +1,6 @@
 """t-SNE adapters: openTSNE (FFT) and manifolds-rs (Barnes-Hut and FFT), plus FFT variants that
-swap only the kNN backend. The `-rinnd-fast` variants take the shared RINND graph
-(`knn_graph.py`, k = 3 x perplexity) as a precomputed kNN graph.
+swap only the kNN backend. The `-rinnd-fast` / `-rinnd-default` variants take the shared RINND
+graph (`knn_graph.py`, k = 3 x perplexity, fast or default schedule) as a precomputed kNN graph.
 
 Both libraries run the same schedule (`params.tsne_schedule`): 750 iterations, of which the first
 250 use early exaggeration 12 (openTSNE's defaults; manifolds-rs would run 1000). Still different:
@@ -27,18 +27,18 @@ TSNE_NEIGHBORS = round(3 * PERPLEXITY)
 
 
 def _opentsne(
-    X: np.ndarray, seed: int, n_threads: int, budget: float, *, neighbors: str
+    X: np.ndarray, seed: int, n_threads: int, budget: float, *, neighbors: str,
+    graph: str | None = None,
 ) -> np.ndarray:
     from openTSNE import TSNE
     from openTSNE.affinity import PerplexityBasedNN
     from openTSNE.nearest_neighbors import PrecomputedNeighbors
 
     affinities = None
-    if neighbors == SHARED_RINND:
-        indices, distances = knn_graph.rinnd_graph(X, TSNE_NEIGHBORS, n_threads)
+    if graph is not None:
+        indices, distances = knn_graph.rinnd_graph(X, TSNE_NEIGHBORS, n_threads, graph)
         affinities = PerplexityBasedNN(knn_index=PrecomputedNeighbors(indices, distances),
                                        perplexity=PERPLEXITY, n_jobs=n_threads)
-        neighbors = OPENTSNE_DEFAULT_NEIGHBORS
     early_iterations, total_iterations = tsne_schedule(budget)
     model = TSNE(
         n_components=2,
@@ -54,11 +54,13 @@ def _opentsne(
     return np.asarray(model.fit(X, affinities=affinities))
 
 
-SHARED_RINND = "shared-rinnd"
 opentsne_fft = partial(_opentsne, neighbors=OPENTSNE_DEFAULT_NEIGHBORS)
 opentsne_fft_nndescent = partial(_opentsne, neighbors="pynndescent")
 opentsne_fft_exact = partial(_opentsne, neighbors="exact")
-opentsne_fft_rinnd_fast = partial(_opentsne, neighbors=SHARED_RINND)
+opentsne_fft_rinnd_fast = partial(_opentsne, neighbors=OPENTSNE_DEFAULT_NEIGHBORS,
+                                  graph=knn_graph.FAST)
+opentsne_fft_rinnd_default = partial(_opentsne, neighbors=OPENTSNE_DEFAULT_NEIGHBORS,
+                                     graph=knn_graph.DEFAULT)
 
 
 def _manifolds_tsne(
@@ -69,15 +71,15 @@ def _manifolds_tsne(
     *,
     approx: str,
     ann: str,
-    shared_graph: bool = False,
+    graph: str | None = None,
 ) -> np.ndarray:
     import manifolds_rs as mf
 
     mf.set_num_threads(n_threads)
     early_iterations, total_iterations = tsne_schedule(budget)
     knn = {}
-    if shared_graph:
-        knn_indices, knn_distances = knn_graph.rinnd_graph(X, TSNE_NEIGHBORS, n_threads)
+    if graph is not None:
+        knn_indices, knn_distances = knn_graph.rinnd_graph(X, TSNE_NEIGHBORS, n_threads, graph)
         knn = {"knn_indices": knn_indices, "knn_distances": knn_distances}
     model = mf.TSNE(
         n_components=2,
@@ -98,5 +100,8 @@ manifolds_fft = partial(_manifolds_tsne, approx="fft", ann=MANIFOLDS_TSNE_DEFAUL
 manifolds_fft_nndescent = partial(_manifolds_tsne, approx="fft", ann="nndescent")
 manifolds_fft_hnsw = partial(_manifolds_tsne, approx="fft", ann="hnsw")
 manifolds_fft_rinnd_fast = partial(
-    _manifolds_tsne, approx="fft", ann=MANIFOLDS_TSNE_DEFAULT_ANN, shared_graph=True
+    _manifolds_tsne, approx="fft", ann=MANIFOLDS_TSNE_DEFAULT_ANN, graph=knn_graph.FAST
+)
+manifolds_fft_rinnd_default = partial(
+    _manifolds_tsne, approx="fft", ann=MANIFOLDS_TSNE_DEFAULT_ANN, graph=knn_graph.DEFAULT
 )
