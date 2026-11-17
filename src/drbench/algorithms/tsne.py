@@ -2,9 +2,10 @@
 swap only the kNN backend. The `-rinnd-fast` variants take the shared RINND graph
 (`knn_graph.py`, k = 3 x perplexity) as a precomputed kNN graph.
 
-Default schedules:
-- openTSNE: 250 early-exaggeration iterations, then 500 more.
-- manifolds-rs: 1000 epochs in total, of which the first 250 use early exaggeration.
+Both libraries run the same schedule (`params.tsne_schedule`): 750 iterations, of which the first
+250 use early exaggeration 12 (openTSNE's defaults; manifolds-rs would run 1000). Still different:
+openTSNE's automatic learning rate is N / exaggeration per phase (N/12, then N), manifolds-rs uses
+max(N/12, 200) throughout.
 """
 
 from functools import partial
@@ -12,12 +13,12 @@ from functools import partial
 import numpy as np
 
 from drbench.algorithms import knn_graph
-from drbench.algorithms.params import PERPLEXITY, scaled_epochs
+from drbench.algorithms.params import (
+    PERPLEXITY,
+    TSNE_EARLY_EXAGGERATION,
+    tsne_schedule,
+)
 
-OPENTSNE_EARLY_EXAGGERATION_ITER = 250
-OPENTSNE_ITER = 500
-MANIFOLDS_TSNE_EPOCHS = 1000
-MANIFOLDS_EARLY_EXAGGERATION_ITER = 250
 # kNN backends the libraries pick on their own: openTSNE "auto" resolves to Annoy for euclidean
 # data, manifolds-rs t-SNE defaults to IVF. The variants below swap only this backend.
 OPENTSNE_DEFAULT_NEIGHBORS = "auto"
@@ -38,11 +39,13 @@ def _opentsne(
         affinities = PerplexityBasedNN(knn_index=PrecomputedNeighbors(indices, distances),
                                        perplexity=PERPLEXITY, n_jobs=n_threads)
         neighbors = OPENTSNE_DEFAULT_NEIGHBORS
+    early_iterations, total_iterations = tsne_schedule(budget)
     model = TSNE(
         n_components=2,
         perplexity=PERPLEXITY,
-        early_exaggeration_iter=scaled_epochs(OPENTSNE_EARLY_EXAGGERATION_ITER, budget),
-        n_iter=scaled_epochs(OPENTSNE_ITER, budget),
+        early_exaggeration_iter=early_iterations,
+        early_exaggeration=TSNE_EARLY_EXAGGERATION,
+        n_iter=total_iterations - early_iterations,
         negative_gradient_method="fft",
         neighbors=neighbors,
         n_jobs=n_threads,
@@ -71,6 +74,7 @@ def _manifolds_tsne(
     import manifolds_rs as mf
 
     mf.set_num_threads(n_threads)
+    early_iterations, total_iterations = tsne_schedule(budget)
     knn = {}
     if shared_graph:
         knn_indices, knn_distances = knn_graph.rinnd_graph(X, TSNE_NEIGHBORS, n_threads)
@@ -78,12 +82,12 @@ def _manifolds_tsne(
     model = mf.TSNE(
         n_components=2,
         perplexity=PERPLEXITY,
-        n_epochs=scaled_epochs(MANIFOLDS_TSNE_EPOCHS, budget),
+        n_epochs=total_iterations,
         approx=approx,
         ann=ann,
         seed=seed,
         optim_params=mf.TsneOptim(
-            early_exag_iter=scaled_epochs(MANIFOLDS_EARLY_EXAGGERATION_ITER, budget)
+            early_exag_iter=early_iterations, early_exag_factor=TSNE_EARLY_EXAGGERATION
         ),
     )
     return model.fit_transform(X, **knn)

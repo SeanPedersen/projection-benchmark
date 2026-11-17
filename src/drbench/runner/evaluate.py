@@ -25,10 +25,13 @@ from drbench.runner.records import (
 
 
 def current_scores(results_dir: Path) -> dict[RunKey, dict]:
-    """Latest metric record per run, only if it was scored under the current definitions."""
+    """Latest metric record per run, if it was scored under the current definitions and belongs
+    to the latest run of that key (same epochs; a rerun with a new schedule needs new scores)."""
+    runs = latest_by_key(read_jsonl(runs_path(results_dir)))
     latest = latest_by_key(read_jsonl(metrics_path(results_dir)))
     return {key: record for key, record in latest.items()
-            if record.get("metrics_version") == METRICS_VERSION}
+            if record.get("metrics_version") == METRICS_VERSION and key in runs
+            and record.get("epochs") == runs[key].get("epochs")}
 
 
 def unevaluated_runs(config: Config) -> dict[str, list[RunKey]]:
@@ -44,6 +47,7 @@ def unevaluated_runs(config: Config) -> dict[str, list[RunKey]]:
 
 def evaluate_pending(config: Config) -> None:
     run, metrics = config.run, config.metrics
+    runs = latest_by_key(read_jsonl(runs_path(run.results_dir)))
     for spec, keys in unevaluated_runs(config).items():
         X = datasets.load(spec, run.data_dir)
         started = time.perf_counter()
@@ -53,7 +57,8 @@ def evaluate_pending(config: Config) -> None:
             started = time.perf_counter()
             Y = np.load(key.embedding_path(run.results_dir))
             scores = evaluate(X, Y, reference, metrics)
-            record = key.as_dict() | scores | {"eval_s": time.perf_counter() - started}
+            record = key.as_dict() | scores | {"epochs": runs[key].get("epochs"),
+                                                 "eval_s": time.perf_counter() - started}
             append_jsonl(metrics_path(run.results_dir), record)
             print(f"  {key.algorithm} seed={key.seed} ×{key.budget:g}: local={scores['local']:.4f} "
                   f"global={scores['global']:.4f} ({record['eval_s']:.0f}s)", flush=True)

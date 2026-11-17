@@ -5,7 +5,8 @@
 - Peak memory: measured by the worker (VmHWM of the timed phase, see `memory.py`). The
   `ru_maxrss` from `os.wait4` is kept only as an upper bound for runs that crash or time out.
 - Robustness: a per-run timeout. Failures are recorded, not fatal. Runs already
-  completed in `runs.jsonl` are skipped.
+  completed in `runs.jsonl` are skipped, unless their recorded epochs differ from the current
+  schedule (then they are rerun and the new record wins).
 - Thermal fairness on laptops: the run order is shuffled (fixed seed), with an optional cooldown.
 """
 
@@ -44,11 +45,20 @@ def default_plan(config: Config) -> list[RunKey]:
     return shuffled([RunKey(*combo) for combo in itertools.product(run.datasets, run.algorithms, run.seeds)])
 
 
+def is_stale(key: RunKey, record: dict) -> bool:
+    """A successful run whose epoch count no longer matches the algorithm's schedule."""
+    return record.get("epochs") != algorithms.get(key.algorithm).epochs(key.budget)
+
+
 def pending_runs(keys: list[RunKey], config: Config, retry_failed: bool) -> list[RunKey]:
     previous = latest_by_key(read_jsonl(runs_path(config.run.results_dir)))
     def is_done(key: RunKey) -> bool:
         record = previous.get(key)
-        return record is not None and (record["status"] == "ok" or not retry_failed)
+        if record is None:
+            return False
+        if record["status"] == "ok":
+            return not is_stale(key, record)
+        return not retry_failed
     return [key for key in keys if not is_done(key)]
 
 

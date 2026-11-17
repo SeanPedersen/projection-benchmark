@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from drbench.algorithms import ncvis, pca, tsne, umap
-from drbench.algorithms.params import scaled_epochs
+from drbench.algorithms.params import TSNE_ITERATIONS, scaled_epochs
 
 FitTransform = Callable[[np.ndarray, int, int, float], np.ndarray]
 
@@ -42,26 +42,26 @@ REGISTRY: dict[str, Algorithm] = {
     for algorithm in (
         Algorithm("pca", "pca", "scikit-learn", "python", "-", pca.sklearn_pca, None),
         Algorithm("opentsne-fft", "t-sne", "openTSNE", "python/c++", "pca", tsne.opentsne_fft,
-                  tsne.OPENTSNE_EARLY_EXAGGERATION_ITER + tsne.OPENTSNE_ITER),
+                  TSNE_ITERATIONS),
         Algorithm("opentsne-fft-nndescent", "t-sne", "openTSNE", "python/c++", "pca",
                   tsne.opentsne_fft_nndescent,
-                  tsne.OPENTSNE_EARLY_EXAGGERATION_ITER + tsne.OPENTSNE_ITER),
+                  TSNE_ITERATIONS),
         Algorithm("opentsne-fft-exact", "t-sne", "openTSNE", "python/c++", "pca",
                   tsne.opentsne_fft_exact,
-                  tsne.OPENTSNE_EARLY_EXAGGERATION_ITER + tsne.OPENTSNE_ITER),
+                  TSNE_ITERATIONS),
         Algorithm("opentsne-fft-rinnd-fast", "t-sne", "openTSNE", "python/c++", "pca",
                   tsne.opentsne_fft_rinnd_fast,
-                  tsne.OPENTSNE_EARLY_EXAGGERATION_ITER + tsne.OPENTSNE_ITER),
+                  TSNE_ITERATIONS),
         Algorithm("mrs-tsne-bh", "t-sne", "manifolds-rs", "rust", "pca", tsne.manifolds_bh,
-                  tsne.MANIFOLDS_TSNE_EPOCHS),
+                  TSNE_ITERATIONS),
         Algorithm("mrs-tsne-fft", "t-sne", "manifolds-rs", "rust", "pca", tsne.manifolds_fft,
-                  tsne.MANIFOLDS_TSNE_EPOCHS),
+                  TSNE_ITERATIONS),
         Algorithm("mrs-tsne-fft-nndescent", "t-sne", "manifolds-rs", "rust", "pca",
-                  tsne.manifolds_fft_nndescent, tsne.MANIFOLDS_TSNE_EPOCHS),
+                  tsne.manifolds_fft_nndescent, TSNE_ITERATIONS),
         Algorithm("mrs-tsne-fft-hnsw", "t-sne", "manifolds-rs", "rust", "pca",
-                  tsne.manifolds_fft_hnsw, tsne.MANIFOLDS_TSNE_EPOCHS),
+                  tsne.manifolds_fft_hnsw, TSNE_ITERATIONS),
         Algorithm("mrs-tsne-fft-rinnd-fast", "t-sne", "manifolds-rs", "rust", "pca",
-                  tsne.manifolds_fft_rinnd_fast, tsne.MANIFOLDS_TSNE_EPOCHS),
+                  tsne.manifolds_fft_rinnd_fast, TSNE_ITERATIONS),
         Algorithm("umap-learn", "umap", "umap-learn", "python/numba", "recursive", umap.umap_learn,
                   umap.UMAP_LEARN_EPOCHS_LARGE),
         Algorithm("umap-learn-rinnd", "umap", "umap-learn", "python/rust", "recursive",

@@ -35,7 +35,7 @@ class Summary:
 
 
 def score_names(metric_records: list[dict]) -> list[str]:
-    excluded = set(KEY_FIELDS) | {"budget", "eval_s", "metrics_version"}
+    excluded = set(KEY_FIELDS) | {"budget", "epochs", "eval_s", "metrics_version"}
     return [name for name in metric_records[0] if name not in excluded] if metric_records else []
 
 

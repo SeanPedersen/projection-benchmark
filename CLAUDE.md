@@ -4,7 +4,7 @@ Benchmark of dimensionality-reduction implementations: quality (local/global) vs
 It is all Python (3.12, uv). Rust and C++ libraries come in through their Python bindings.
 
 ## Commands
-- `uv sync` and `uv run pytest` (50 tests; metric tests compare against sklearn to 1e-12)
+- `uv sync` and `uv run pytest` (51 tests; metric tests compare against sklearn to 1e-12)
 - `uv run ruff check src tests`
 - `uv run drbench {prep,run,evaluate,report,all,curves,knn} [--subsample N --seeds 0,1 --algos a,b --results-dir DIR --timeout S --threads T]`
 - Config: `benchmark.toml`. CLI flags override `[run]`. `[curves]` configures the budget sweep, which writes to `results/curves/`. `[knn]` configures `drbench knn` (`--backends`, `--ks`, `--repeats` override), which writes `results/knn/knn.jsonl` and `KNN.md`.
@@ -15,12 +15,12 @@ It is all Python (3.12, uv). Rust and C++ libraries come in through their Python
 - `algorithms/`: registry of `Algorithm(fit_transform(X, seed, n_threads, budget), default_epochs)`.
   - `budget` multiplies each library's default epochs; t-SNE early exaggeration and NCVis init epochs scale with it.
   - Imports are lazy, so a worker only loads the library it measures.
-  - Shared hyperparameters and `scaled_epochs` live in `params.py`.
+  - Shared hyperparameters and `scaled_epochs` live in `params.py`, including the t-SNE schedule both libraries run (`tsne_schedule`: 750 iterations, the first 250 with early exaggeration 12; manifolds-rs would default to 1000). The learning rate still differs: openTSNE uses N/exaggeration per phase, manifolds-rs max(N/12, 200).
   - Variants that differ only in the kNN backend: `umap-learn` (PyNNDescent) vs `umap-learn-rinnd`; `opentsne-fft` (Annoy) vs `-nndescent` / `-exact`; `mrs-tsne-fft` (IVF) vs `-nndescent` / `-hnsw`.
   - `-rinnd-fast` variants (`opentsne-fft`, `mrs-tsne-fft`, `umap-learn`, `mrs-umap`, `mrs-pacmap`, `ncvis`) take a precomputed RINND graph from `knn_graph.py`: schedule per k (k=15 defaults, k=60/90 `max_candidates=20, n_iters=4`). Graphs are cached in `data/<spec>/graphs/` and shared across algorithms and seeds; a run that loads one is charged its stored build time (added to `fit_s`, also in `shared_knn_s`) and extra peak RSS. CPU time is not charged.
   - Graph layouts differ: manifolds-rs and openTSNE take it as is (euclidean, no self); umap-learn needs the point itself as first neighbour (`with_self`); NCVis gets squared distances.
 - `runner/`:
-  - `orchestrator.py` spawns one `worker.py` process per run and handles timeouts and resume.
+  - `orchestrator.py` spawns one `worker.py` process per run and handles timeouts and resume. A run whose recorded `epochs` no longer match the schedule is rerun; its old score is then ignored (`evaluate.current_scores`).
   - `memory.py` reads VmHWM.
   - `records.py` defines `RunKey(dataset, algorithm, seed, budget)`, the paths and the JSONL stores.
   - `curves.py` plans the budget grid and the ×4 extension.
