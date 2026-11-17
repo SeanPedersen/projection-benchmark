@@ -6,7 +6,8 @@ from pathlib import Path
 from drbench import algorithms
 from drbench.config import Config
 from drbench.report.plots import plot_curves
-from drbench.runner.records import latest_by_key, metrics_path, read_jsonl, runs_path
+from drbench.runner.evaluate import current_scores
+from drbench.runner.records import latest_by_key, read_jsonl, runs_path
 
 TIME_LIMITS_S = (5, 15, 30, 60, 120, 300)
 MISSING = "–"
@@ -15,7 +16,7 @@ MISSING = "–"
 def curve_points(results_dir: Path, datasets: tuple[str, ...]) -> list[dict]:
     """Join successful runs with their scores; one dict per (dataset, algorithm, budget)."""
     runs = latest_by_key(read_jsonl(runs_path(results_dir)))
-    scores = latest_by_key(read_jsonl(metrics_path(results_dir)))
+    scores = current_scores(results_dir)
     points = []
     for key, run in sorted(runs.items()):
         if run["status"] != "ok" or key not in scores or key.dataset not in datasets:

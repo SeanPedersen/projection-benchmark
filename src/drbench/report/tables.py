@@ -8,7 +8,8 @@ from pathlib import Path
 import numpy as np
 
 from drbench import algorithms
-from drbench.runner.records import RunKey, latest_by_key, metrics_path, read_jsonl, runs_path
+from drbench.runner.evaluate import current_scores
+from drbench.runner.records import RunKey, latest_by_key, read_jsonl, runs_path
 
 COST_FIELDS = ("fit_s", "peak_rss_mb", "delta_rss_mb")
 KEY_FIELDS = ("dataset", "algorithm", "seed")
@@ -34,13 +35,13 @@ class Summary:
 
 
 def score_names(metric_records: list[dict]) -> list[str]:
-    excluded = set(KEY_FIELDS) | {"eval_s"}
+    excluded = set(KEY_FIELDS) | {"budget", "eval_s", "metrics_version"}
     return [name for name in metric_records[0] if name not in excluded] if metric_records else []
 
 
 def summarize(results_dir: Path, datasets: tuple[str, ...]) -> list[Summary]:
     runs = latest_by_key(read_jsonl(runs_path(results_dir)))
-    metrics = latest_by_key(read_jsonl(metrics_path(results_dir)))
+    metrics = current_scores(results_dir)
     names = score_names(list(metrics.values()))
 
     grouped: dict[tuple[str, str], list[RunKey]] = defaultdict(list)

@@ -4,7 +4,7 @@ Benchmark of dimensionality-reduction implementations: quality (local/global) vs
 It is all Python (3.12, uv). Rust and C++ libraries come in through their Python bindings.
 
 ## Commands
-- `uv sync` and `uv run pytest` (42 tests; metric tests compare against sklearn to 1e-12)
+- `uv sync` and `uv run pytest` (43 tests; metric tests compare against sklearn to 1e-12)
 - `uv run ruff check src tests`
 - `uv run drbench {prep,run,evaluate,report,all,curves,knn} [--subsample N --seeds 0,1 --algos a,b --results-dir DIR --timeout S --threads T]`
 - Config: `benchmark.toml`. CLI flags override `[run]`. `[curves]` configures the budget sweep, which writes to `results/curves/`. `[knn]` configures `drbench knn` (`--backends`, `--ks`, `--repeats` override), which writes `results/knn/knn.jsonl` and `KNN.md`.
@@ -27,8 +27,8 @@ It is all Python (3.12, uv). Rust and C++ libraries come in through their Python
 - `metrics/`:
   - `neighbors.py` holds the exact rank kernels (BLAS chunks for high-d, a fused numba kernel for low-d).
   - `local.py` has trustworthiness, continuity and recall.
-  - `global_geometry.py` has the centroid, medoid and pair Spearman scores.
-  - `__init__.py` builds the cached per-dataset `reference.npz` and runs `evaluate()`. With `anchor_rows` set, local scores are estimated on that many fixed anchor points (ranks stay exact over all N).
+  - `global_geometry.py` has the global scores: `global` = random-pair Spearman ρ (1M pairs) and `triplet_acc` (1M triplets). Both have measured sampling sd ≤ 0.001, below the seed spread. k-means scores were dropped as unstable (issue #2); k-means labels only colour the thumbnails.
+  - `__init__.py` builds the cached per-dataset `reference.npz` (missing or resized parts are recomputed on load) and runs `evaluate()`. `METRICS_VERSION` is stored with each score; `evaluate` rescores records from older versions and reports only use current ones. With `anchor_rows` set, local scores are estimated on that many fixed anchor points (ranks stay exact over all N).
 - `report/`: `tables.py` aggregates; `plots.py` draws the Pareto charts, curves and thumbnails (dataviz palette); `__init__.py` writes `REPORT.md`; `curves.py` writes `CURVES.md`; `knn.py` writes `KNN.md`.
 
 ## Gotchas

@@ -21,9 +21,10 @@ class RunConfig:
 @dataclass(frozen=True)
 class MetricsConfig:
     k_local: tuple[int, ...]
-    k_clusters: tuple[int, ...]
+    color_clusters: int
     recall_k: int
     n_random_pairs: int
+    n_triplets: int
     chunk_rows: int
     anchor_rows: int | None = None
 
@@ -86,9 +87,10 @@ def load_config(path: Path) -> Config:
         ),
         metrics=MetricsConfig(
             k_local=tuple(metrics["k_local"]),
-            k_clusters=tuple(metrics["k_clusters"]),
+            color_clusters=int(metrics["color_clusters"]),
             recall_k=int(metrics["recall_k"]),
             n_random_pairs=int(metrics["n_random_pairs"]),
+            n_triplets=int(metrics["n_triplets"]),
             chunk_rows=int(metrics["chunk_rows"]),
         ),
         curves=CurvesConfig(

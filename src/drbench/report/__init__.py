@@ -33,14 +33,14 @@ def table_row(s: Summary, k_local: tuple[int, ...]) -> list[str]:
         with_sd("local"), with_sd("global"),
         *[format_score(mean, f"trust_{k}") for k in k_local],
         *[format_score(mean, f"continuity_{k}") for k in k_local],
-        format_score(mean, recall), format_score(mean, "pair_rho"), f"{s.n_ok}/{s.n_failed}",
+        format_score(mean, recall), with_sd("triplet_acc"), f"{s.n_ok}/{s.n_failed}",
     ]
 
 
 def markdown_table(summaries: list[Summary], k_local: tuple[int, ...]) -> str:
     columns = ["algorithm", "library", "fit s", "peak MB", "local", "global",
                *[f"T@{k}" for k in k_local], *[f"C@{k}" for k in k_local],
-               "recall", "pair ρ", "ok/failed"]
+               "recall", "triplet", "ok/failed"]
     rows = [columns, ["---"] * len(columns), *[table_row(s, k_local) for s in summaries]]
     return "\n".join("| " + " | ".join(cells) + " |" for cells in rows)
 
@@ -51,14 +51,15 @@ def report_header(config: Config) -> str:
         "# Dimensionality reduction benchmark\n\n"
         f"Generated {date.today().isoformat()} · {run.n_threads} threads · seeds {list(run.seeds)}\n\n"
         f"**local** = mean trustworthiness over k ∈ {list(metrics.k_local)}; "
-        f"**global** = mean Spearman ρ of k-means centroid distances over k ∈ {list(metrics.k_clusters)}. "
+        f"**global** = Spearman ρ of original vs 2D distances over {metrics.n_random_pairs:,} random pairs. "
+        f"**triplet** = share of {metrics.n_triplets:,} random triplets whose closer pair is the same in both spaces. "
         "T = trustworthiness, C = continuity. Cost = median over seeds; scores = mean ± sd.\n"
     )
 
 
 def thumbnails_for(spec: str, summaries: list[Summary], config: Config, path: Path) -> bool:
     reference = datasets.cache_dir(spec, config.run.data_dir) / "reference.npz"
-    k_color = min(config.metrics.k_clusters)
+    k_color = config.metrics.color_clusters
     embeddings = {}
     for s in summaries:
         embedding = RunKey(spec, s.algorithm, THUMBNAIL_SEED).embedding_path(config.run.results_dir)

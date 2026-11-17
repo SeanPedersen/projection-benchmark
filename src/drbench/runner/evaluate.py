@@ -1,4 +1,5 @@
-"""Score every successful run that has no metrics yet; results go to `metrics.jsonl`.
+"""Score every successful run that has no current metrics yet; results go to `metrics.jsonl`.
+Records scored under an older `METRICS_VERSION` are rescored (appended; the latest wins).
 
 Evaluation is never timed as part of a run. The original-space reference (exact kNN, k-means,
 pairs) is built once per dataset spec and cached.
@@ -6,12 +7,13 @@ pairs) is built once per dataset spec and cached.
 
 import time
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 
 from drbench import datasets
 from drbench.config import Config
-from drbench.metrics import evaluate, reference_for
+from drbench.metrics import METRICS_VERSION, evaluate, reference_for
 from drbench.runner.records import (
     RunKey,
     append_jsonl,
@@ -22,10 +24,17 @@ from drbench.runner.records import (
 )
 
 
+def current_scores(results_dir: Path) -> dict[RunKey, dict]:
+    """Latest metric record per run, only if it was scored under the current definitions."""
+    latest = latest_by_key(read_jsonl(metrics_path(results_dir)))
+    return {key: record for key, record in latest.items()
+            if record.get("metrics_version") == METRICS_VERSION}
+
+
 def unevaluated_runs(config: Config) -> dict[str, list[RunKey]]:
     results_dir = config.run.results_dir
     runs = latest_by_key(read_jsonl(runs_path(results_dir)))
-    scored = set(latest_by_key(read_jsonl(metrics_path(results_dir))))
+    scored = set(current_scores(results_dir))
     by_dataset: dict[str, list[RunKey]] = defaultdict(list)
     for key, record in sorted(runs.items()):
         if record["status"] == "ok" and key not in scored and key.dataset in config.run.datasets:

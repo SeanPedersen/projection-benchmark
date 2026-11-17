@@ -34,7 +34,7 @@ DPI = 160
 
 PANELS = (
     ("fit_s", "local", "Fit time (s, log)", "Local score (mean trustworthiness)", True),
-    ("fit_s", "global", "Fit time (s, log)", "Global score (mean centroid ρ)", True),
+    ("fit_s", "global", "Fit time (s, log)", "Global score (random-pair ρ)", True),
     ("peak_rss_mb", "local", "Peak RSS (MB)", "Local score (mean trustworthiness)", False),
 )
 
@@ -142,7 +142,7 @@ CURVE_LINESTYLES = {"mrs-tsne-fft": "--", "umap-learn-legacy": "--"}
 DEFAULT_POINT_RING = 150
 CURVE_PANELS = (
     ("fit_s", "local", "Wall time (s, log)", "Local score (mean trustworthiness)"),
-    ("fit_s", "global", "Wall time (s, log)", "Global score (mean centroid ρ)"),
+    ("fit_s", "global", "Wall time (s, log)", "Global score (random-pair ρ)"),
     ("cpu_s", "local", "CPU time (s, log)", "Local score (mean trustworthiness)"),
 )
 

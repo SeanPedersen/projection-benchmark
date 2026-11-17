@@ -1,8 +1,12 @@
 """Evaluate an embedding against a per-dataset reference.
 
 The reference holds the original-space artefacts that every embedding of a dataset shares:
-the exact kNN, the k-means clusterings and the sampled pairs. It is computed once and cached
-in `data/<spec>/reference.npz`.
+the exact kNN, the sampled pairs and triplets, and k-means labels (thumbnail colours only). It is
+computed once and cached in `data/<spec>/reference.npz`; parts that are missing or sized
+differently from the config are recomputed on load, the rest is kept.
+
+`local` = mean trustworthiness over `k_local`; `global` = random-pair Spearman ρ.
+`METRICS_VERSION` changes whenever a score's definition does, so stored scores get recomputed.
 """
 
 from dataclasses import dataclass
@@ -15,46 +19,67 @@ from drbench.metrics import global_geometry as gg
 from drbench.metrics import local
 from drbench.metrics.neighbors import exact_knn, lowdim_knn, neighbor_ranks
 
+METRICS_VERSION = 2
+
 
 @dataclass(frozen=True)
 class Reference:
     knn: np.ndarray
-    clusters: dict[int, gg.ClusterReference]
+    color_labels: np.ndarray
     pairs: gg.PairReference
+    triplets: gg.TripletReference
 
 
 def build_reference(X: np.ndarray, config: MetricsConfig) -> Reference:
     return Reference(
         knn=exact_knn(X, config.k_max, config.chunk_rows),
-        clusters={k: gg.fit_clusters(X, k) for k in config.k_clusters},
+        color_labels=gg.cluster_labels(X, config.color_clusters),
         pairs=gg.sample_pairs(X, config.n_random_pairs),
+        triplets=gg.sample_triplets(X, config.n_triplets),
     )
+
+
+def labels_key(n_clusters: int) -> str:
+    return f"k{n_clusters}_labels"
 
 
 def save_reference(reference: Reference, path: Path) -> None:
     arrays = {"knn": reference.knn, "pair_first": reference.pairs.first,
-              "pair_second": reference.pairs.second, "pair_distances": reference.pairs.distances}
-    for k, c in reference.clusters.items():
-        arrays |= {f"k{k}_labels": c.labels, f"k{k}_center_distances": c.center_distances,
-                   f"k{k}_medoids": c.medoids, f"k{k}_medoid_distances": c.medoid_distances}
+              "pair_second": reference.pairs.second, "pair_distances": reference.pairs.distances,
+              "triplet_anchor": reference.triplets.anchor, "triplet_first": reference.triplets.first,
+              "triplet_second": reference.triplets.second,
+              "triplet_first_closer": reference.triplets.first_closer}
+    arrays[labels_key(len(np.unique(reference.color_labels)))] = reference.color_labels
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(path, **arrays)
 
 
-def load_reference(path: Path, config: MetricsConfig) -> Reference:
-    data = np.load(path)
-    clusters = {
-        k: gg.ClusterReference(data[f"k{k}_labels"], data[f"k{k}_center_distances"],
-                               data[f"k{k}_medoids"], data[f"k{k}_medoid_distances"])
-        for k in config.k_clusters
-    }
-    pairs = gg.PairReference(data["pair_first"], data["pair_second"], data["pair_distances"])
-    return Reference(knn=data["knn"], clusters=clusters, pairs=pairs)
+def load_reference(path: Path, X: np.ndarray, config: MetricsConfig) -> tuple[Reference, bool]:
+    """Cached reference plus whether parts missing from the file had to be computed."""
+    data = dict(np.load(path))
+    labels_cached = labels_key(config.color_clusters) in data
+    color_labels = (data[labels_key(config.color_clusters)] if labels_cached
+                    else gg.cluster_labels(X, config.color_clusters))
+    pairs_cached = len(data["pair_first"]) == config.n_random_pairs
+    pairs = gg.PairReference(
+        data["pair_first"], data["pair_second"], data["pair_distances"]
+    ) if pairs_cached else gg.sample_pairs(X, config.n_random_pairs)
+    triplets_cached = len(data.get("triplet_anchor", ())) == config.n_triplets
+    triplets = gg.TripletReference(
+        data["triplet_anchor"], data["triplet_first"], data["triplet_second"],
+        data["triplet_first_closer"],
+    ) if triplets_cached else gg.sample_triplets(X, config.n_triplets)
+    extended = not (labels_cached and pairs_cached and triplets_cached)
+    reference = Reference(knn=data["knn"], color_labels=color_labels, pairs=pairs, triplets=triplets)
+    return reference, extended
 
 
 def reference_for(X: np.ndarray, path: Path, config: MetricsConfig) -> Reference:
     if path.exists():
-        return load_reference(path, config)
+        reference, extended = load_reference(path, X, config)
+        if extended:
+            save_reference(reference, path)
+        return reference
     reference = build_reference(X, config)
     save_reference(reference, path)
     return reference
@@ -78,16 +103,15 @@ def evaluate(X: np.ndarray, Y: np.ndarray, reference: Reference, config: Metrics
     ranks_hd = neighbor_ranks(X, lowdim_knn(Y, config.k_max, rows), config.chunk_rows, rows)
     ranks_ld = neighbor_ranks(Y, hd_neighbors, config.chunk_rows, rows)
 
-    scores: dict[str, float] = {"anchors": n_points if rows is None else len(rows)}
+    scores: dict[str, float] = {"metrics_version": METRICS_VERSION,
+                                "anchors": n_points if rows is None else len(rows)}
     for k in config.k_local:
         scores[f"trust_{k}"] = local.trustworthiness(ranks_hd, k, n_points)
         scores[f"continuity_{k}"] = local.continuity(ranks_ld, k, n_points)
     scores[f"recall_{config.recall_k}"] = local.knn_recall(ranks_hd, config.recall_k)
-    for k, clusters in reference.clusters.items():
-        scores[f"centroid_rho_{k}"] = gg.centroid_spearman(clusters, Y)
-        scores[f"medoid_rho_{k}"] = gg.medoid_spearman(clusters, Y)
     scores["pair_rho"] = gg.pair_spearman(reference.pairs, Y)
+    scores["triplet_acc"] = gg.triplet_accuracy(reference.triplets, Y)
 
     scores["local"] = float(np.mean([scores[f"trust_{k}"] for k in config.k_local]))
-    scores["global"] = float(np.mean([scores[f"centroid_rho_{k}"] for k in config.k_clusters]))
+    scores["global"] = scores["pair_rho"]
     return scores

@@ -33,9 +33,14 @@ results_dir = "results"
 
 [metrics]
 k_local = [5, 15, 30]
-k_clusters = [5, 15, 30]
+# k-means clusters used only to colour the embedding thumbnails (no score uses k-means).
+color_clusters = 15
 recall_k = 15
-n_random_pairs = 200000
+# global = Spearman ρ over these random pairs; triplet accuracy is a second global column.
+# Measured sampling sd on fixed embeddings: 0.002 with 200k pairs (half the t-SNE seed spread),
+# 0.0002-0.0005 with 1M triplets.
+n_random_pairs = 1000000
+n_triplets = 1000000
 chunk_rows = 512
 
 [curves]
