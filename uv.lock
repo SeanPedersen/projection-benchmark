@@ -132,7 +132,7 @@ requires-dist = [
     { name = "manifolds-rs", specifier = ">=0.6.1" },
     { name = "matplotlib", specifier = ">=3.9" },
     { name = "ncvis", directory = "vendor/ncvis" },
-    { name = "ncvis-plus", git = "https://github.com/SeanPedersen/ncvis-plus?rev=584c3a3" },
+    { name = "ncvis-plus", git = "https://github.com/SeanPedersen/ncvis-plus?rev=2f77016" },
     { name = "niquests", specifier = ">=3.9" },
     { name = "numba", specifier = ">=0.60" },
     { name = "numpy", specifier = ">=2.0" },
@@ -333,7 +333,7 @@ source = { directory = "vendor/ncvis" }
 [[package]]
 name = "ncvis-plus"
 version = "0.1.0"
-source = { git = "https://github.com/SeanPedersen/ncvis-plus?rev=584c3a3#584c3a366d4cfd806e068a637aa11998a3fa1fe5" }
+source = { git = "https://github.com/SeanPedersen/ncvis-plus?rev=2f77016#2f770169e79af0c7126d0b0c34de3f258a28e0e9" }
 dependencies = [
     { name = "numpy" },
     { name = "rinnd" },

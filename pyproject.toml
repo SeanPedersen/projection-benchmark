@@ -44,4 +44,4 @@ testpaths = ["tests"]
 [tool.uv.sources]
 ncvis = { path = "vendor/ncvis" }
 # NCVis+ (fork with PCA init, retuned defaults and a faster kernel) is not on PyPI yet.
-ncvis-plus = { git = "https://github.com/SeanPedersen/ncvis-plus", rev = "584c3a3" }
+ncvis-plus = { git = "https://github.com/SeanPedersen/ncvis-plus", rev = "2f77016" }
