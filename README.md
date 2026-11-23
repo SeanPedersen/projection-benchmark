@@ -151,3 +151,8 @@ Shared hyperparameters are aligned across implementations: perplexity 30, n_neig
 - Higher target dimensions (32, 128), scored by recall.
 - Re-evaluate `results/` and `results/curves/` with the new global measures.
 - Algorithms: umap-rs (a Rust CLI is needed, since it has no Python bindings), fast-umap (GPU), TriMap, VAE, SOM, (F)LAS, SAUCIE, SQuaD-MDS, IsoMap, DiRe-JAX.
+
+## Similar projects
+
+- [dr-fidelity-benchmark](https://github.com/toorpia/dr-fidelity-benchmark)
+- [dim_reduction_arena](https://github.com/Dima806/dim_reduction_arena)
